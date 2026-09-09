@@ -108,8 +108,7 @@ public final class RecognitionClient {
                 long timestamp=System.currentTimeMillis();
                 JSONObject request=new JSONObject().put("timestamp",timestamp).put("timezone","UTC")
                     .put("signature",new JSONObject().put("samplems",audio.length/16).put("timestamp",timestamp).put("uri",signature));
-                String url="https://amp.shazam.com/discovery/v5/en/US/android/-/tag/"+UUID.randomUUID().toString().toUpperCase(java.util.Locale.ROOT)+"/"+UUID.randomUUID()+"?sync=true&webv3=true&sampling=true&connected=&shazamapiversion=v3&sharehub=true&video=v3";
-                Track track=parse(fetchScoped(url,request,scope,budget),anchor);
+                Track track=parse(fetchScoped(recognitionUrl(),request,scope,budget),anchor);
                 check(scope,budget);
                 if(track!=null)track.sampleDurationMs=audio.length/16;
                 return track;
@@ -257,6 +256,14 @@ public final class RecognitionClient {
         }
         return "";
     }
+    static String recognitionUrl(){
+        return "https://amp.shazam.com/discovery/v5/en/US/android/-/tag/"
+            +UUID.randomUUID().toString().toUpperCase(java.util.Locale.ROOT)+"/"+UUID.randomUUID()
+            +"?sync=true&webv3=true&shazamapiversion=v3";
+    }
+    static boolean allowedHost(String host){
+        return "amp.shazam.com".equals(host)||"music.youtube.com".equals(host);
+    }
     public static boolean validMusicUrl(String link) {
         try { URI u=URI.create(link); return "https".equals(u.getScheme())&&"music.youtube.com".equals(u.getHost())&&"/watch".equals(u.getPath())&&u.getQuery()!=null&&u.getQuery().matches(".*(?:^|&)v=[A-Za-z0-9_-]{11}(?:&.*)?"); }
         catch(Exception e) { return false; }
@@ -279,7 +286,9 @@ public final class RecognitionClient {
     }
     private String fetchTextScoped(String url,JSONObject body,RequestScope scope,CallBudget budget) throws Exception {
         check(scope,budget);
-        URL target=new URL(url); HttpURLConnection connection=connections.open(target);
+        URL target=new URL(url);
+        if(!allowedHost(target.getHost()))throw new RequestException(Kind.UNAVAILABLE,"Запрос к постороннему серверу заблокирован.");
+        HttpURLConnection connection=connections.open(target);
         try {
             scope.register(connection); budget.attach(connection); check(scope,budget);
             boolean catalog="music.youtube.com".equals(target.getHost());

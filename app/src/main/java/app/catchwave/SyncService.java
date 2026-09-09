@@ -40,7 +40,7 @@ public final class SyncService extends Service {
     private boolean compatibleOpening;
     private boolean sourceResumeReady;
     private long sourceLostAt,pauseRequestedAt,captureStarted;
-    private String catalogProblem="";
+    private String catalogProblem="",prefetchKey="";
     private MediaBridge bridge;
     private PowerManager.WakeLock wakeLock;
     private long started,lastMatch,lastSeek,acquireStarted,nativeDeadline,lastLaunchRequest;
@@ -117,7 +117,7 @@ public final class SyncService extends Service {
         model.compatibleLaunchRequested=false;model.launchTicket++;compatibleOpening=false;
         if(capturePause!=null)capturePause.release();
         model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.tEstMs=model.tSessionAfterSeekMs=model.seekLagMs=Long.MIN_VALUE;model.progress=0;
-        captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";
+        captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";prefetchKey="";
         sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;pausedByUs=false;
         sourceTimeline.reset();shortCapturePreferred=false;learnedSeekLag=-1;awaitingSeekSettle=false;seekSentAt=seekCommanded=seekEstAtSend=0;
         capturePause=new CapturePause(bridge.controller());
@@ -142,7 +142,7 @@ public final class SyncService extends Service {
             int min=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
             if(min<=0)throw new IllegalStateException("Запись 16 кГц не поддерживается устройством");
             if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("Доступ к микрофону отозван");
-            local=new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*4,16000));
+            local=openMicrophone(Math.max(min*4,16000));
             recorder=local;if(local.getState()!=AudioRecord.STATE_INITIALIZED)throw new IllegalStateException("Микрофон недоступен");
             // Prefer the phone microphone even when output is a Bluetooth headset.
             for(AudioDeviceInfo device:audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) if(device.getType()==AudioDeviceInfo.TYPE_BUILTIN_MIC){local.setPreferredDevice(device);break;}
@@ -211,9 +211,11 @@ public final class SyncService extends Service {
             if(model.live&&model.track!=null&&!model.track.key.equals(match.key)){
                 pauseOwned();model.compatibleLaunchRequested=false;model.needsOpen=false;model.launchTicket++;
             }
+            if(confirmation.count>=1&&match.hasPosition()&&microphone!=null&&microphone.isAlive())prefetchCatalog(match);
             model.update("Проверяю позицию · "+confirmation.count+"/3",match.title+" — сравниваю разные фрагменты и ход времени источника.");return;
         }
         match=confirmation.track;
+        if(match.youtubeUrl==null||match.youtubeUrl.isEmpty())match.youtubeUrl=client.cached(match);
         if(!model.live)captureDone=true;
         boolean changed=resumeFresh||waitingNextSource||model.track==null||!model.track.key.equals(match.key);
         if(changed||waitingNextSource){closeEndGuard();waitingNextSource=false;}
@@ -446,6 +448,28 @@ public final class SyncService extends Service {
         model.notifyChanged();super.onDestroy();
     }
     @Override public void onTaskRemoved(Intent rootIntent){finish("Сеанс остановлен","Приложение закрыто.");}
+    private void prefetchCatalog(Track match){
+        if(match==null||match.key.isEmpty()||match.key.equals(prefetchKey)||!client.cached(match).isEmpty())return;
+        prefetchKey=match.key;
+        final RequestScope scope=requests;
+        final int generation=captureGeneration;
+        resolver.submit(()->{
+            RecognitionClient.Resolution result=client.resolveResult(match,scope);
+            if(!active||generation!=captureGeneration)return;
+            model.record("Каталог заранее: "+result.kind+(result.url==null||result.url.isEmpty()?"":" "+result.url));
+        });
+    }
+    private AudioRecord openMicrophone(int buffer){
+        AudioFormat format=new AudioFormat.Builder().setSampleRate(16000).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
+        try{
+            AudioRecord.Builder builder=new AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION).setAudioFormat(format).setBufferSizeInBytes(buffer);
+            if(Build.VERSION.SDK_INT>=31)builder.setPrivacySensitive(true);
+            AudioRecord record=builder.build();
+            if(record.getState()==AudioRecord.STATE_INITIALIZED)return record;
+            record.release();
+        }catch(RuntimeException ignored){}
+        return new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buffer);
+    }
     private void closeEndGuard(){model.guardingTrack=false;if(endGuard!=null){endGuard.close();endGuard=null;}}
     @Override public IBinder onBind(Intent intent){return null;}
     @Override protected void dump(java.io.FileDescriptor fd,java.io.PrintWriter writer,String[] args){writer.println(model.report());}

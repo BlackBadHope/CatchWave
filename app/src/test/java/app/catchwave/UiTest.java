@@ -74,6 +74,15 @@ public class UiTest {
             assertEquals("Один подхват — дальше сам",note.getText().toString());
         }
     }
+    @Test public void privacyNoticeForbidsAdvertisingIdAndAnalytics(){
+        String notice=Privacy.notice();
+        assertTrue(notice.contains("Рекламного идентификатора нет"));
+        assertTrue(notice.contains("amp.shazam.com"));
+        assertTrue(notice.contains("music.youtube.com"));
+        assertFalse(notice.toLowerCase(java.util.Locale.ROOT).contains("admob"));
+        assertFalse(notice.toLowerCase(java.util.Locale.ROOT).contains("firebase"));
+        assertTrue(notice.contains("Текст уведомлений не читается"));
+    }
     @Test public void gplLicenseStartsAtTermsNotHowToApply(){
         String license="Preamble\n\n                       TERMS AND CONDITIONS\n  0. Definitions.\nHow to Apply These Terms to Your New Programs";
         int start=MainActivity.licenseStart(license);
