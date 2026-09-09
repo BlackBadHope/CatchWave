@@ -34,5 +34,14 @@ public class CoreTest {
     @Test public void responseCarriesOffsetAndCatalogId() throws Exception {Track t=RecognitionClient.parse(new JSONObject("{\"matches\":[{\"offset\":83.25}],\"track\":{\"key\":\"123\",\"title\":\"Hello\",\"subtitle\":\"Adele\",\"hub\":{\"actions\":[{\"id\":\"123456\"}]}}}"),9000);assertNotNull(t);assertEquals(83250,t.offsetMs);assertEquals("123456",t.appleId);assertEquals(9000,t.anchorMs);}
     @Test public void noMatchIsNotAnInventedTrack() throws Exception {assertNull(RecognitionClient.parse(new JSONObject("{\"matches\":[]}"),0));Track t=RecognitionClient.parse(new JSONObject("{\"matches\":[{}],\"track\":{\"key\":\"1\"}}"),0);assertNull(t);}
     @Test public void onlyYoutubeMusicWatchLinksAreOpened(){assertTrue(RecognitionClient.validMusicUrl("https://music.youtube.com/watch?v=4ujBQOzs6Lw"));assertFalse(RecognitionClient.validMusicUrl("https://music.youtube.com.evil.test/watch?v=4ujBQOzs6Lw"));assertFalse(RecognitionClient.validMusicUrl("javascript:alert(1)"));assertFalse(RecognitionClient.validMusicUrl("https://music.youtube.com/watch?v=short"));}
+    @Test public void shazamAppIsNotRequiredYoutubeMusicIsOnlyThePlayer(){
+        assertFalse(RecognitionPath.requiresShazamApp());
+        assertTrue(RecognitionPath.requiresYoutubeMusicApp());
+        assertEquals("com.google.android.apps.youtube.music",MediaBridge.PACKAGE);
+        assertFalse(MediaBridge.PACKAGE.equals(RecognitionPath.SHAZAM_APP));
+        assertTrue(RecognitionPath.explanation().contains("Приложение Shazam не нужно"));
+        assertTrue(RecognitionPath.explanation().contains("YouTube Music — выбранный плеер"));
+        assertTrue(Privacy.notice().contains("не приложение Shazam"));
+    }
     @Test public void signatureHasCorrectLengthChecksumAndSampleRate(){byte[] data=Base64.getDecoder().decode(Fingerprint.generate(new short[96000]).split(",",2)[1]);ByteBuffer b=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);assertEquals(0xcafe2580,b.getInt());assertEquals(data.length-48,b.getInt(8));assertEquals(3<<27,b.getInt(28));assertEquals(99840,b.getInt(40));CRC32 crc=new CRC32();crc.update(data,8,data.length-8);assertEquals((int)crc.getValue(),b.getInt(4));}
 }

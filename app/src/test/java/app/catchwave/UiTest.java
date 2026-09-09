@@ -78,6 +78,8 @@ public class UiTest {
         String notice=Privacy.notice();
         assertTrue(notice.contains("Рекламного идентификатора нет"));
         assertTrue(notice.contains("amp.shazam.com"));
+        assertTrue(notice.contains("не приложение Shazam"));
+        assertTrue(RecognitionPath.explanation().contains("Приложение Shazam не нужно"));
         assertTrue(notice.contains("music.youtube.com"));
         assertFalse(notice.toLowerCase(java.util.Locale.ROOT).contains("admob"));
         assertFalse(notice.toLowerCase(java.util.Locale.ROOT).contains("firebase"));

@@ -79,7 +79,7 @@ public final class MainActivity extends Activity {
         pendingStart=true;
         if(!getPreferences().getBoolean("intro",false)){
             new AlertDialog.Builder(this).setTitle("Как работает подхват")
-                .setMessage("Телефон записывает короткий фрагмент и создаёт звуковой отпечаток. Отпечаток отправляется Shazam для распознавания; название и исполнитель — YouTube Music для поиска. После распознавания приложение запрашивает запуск через медиасессию YouTube Music. Сама запись остаётся в оперативной памяти телефона и не сохраняется.\n\nРекламного идентификатора, аналитики и встроенной рекламы нет.\n\nДля перемотки нужен доступ к медиасессии через разрешение «Доступ к уведомлениям». Содержимое уведомлений приложение не читает.\n\nLive Sync пока работает только с наушниками. Интерфейсы распознавания и поиска ссылок могут быть временно недоступны.")
+                .setMessage(RecognitionPath.explanation()+"\n\nСама запись остаётся в оперативной памяти и не сохраняется. Рекламного идентификатора, аналитики и встроенной рекламы нет.\n\nДля перемотки нужен доступ к медиасессии через разрешение «Доступ к уведомлениям». Содержимое уведомлений приложение не читает.\n\nLive Sync пока работает только с наушниками.")
                 .setPositiveButton("Продолжить",(d,w)->{getPreferences().edit().putBoolean("intro",true).apply();begin();})
                 .setNegativeButton("Позже",(d,w)->pendingStart=false).show();return;
         }
@@ -220,7 +220,7 @@ public final class MainActivity extends Activity {
         android.media.session.MediaController c=new MediaBridge(this).controller();
         android.media.session.PlaybackState p=c==null?null:c.getPlaybackState();
         String report=AppIdentity.label()+"\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
-            +"\nРекламный ID: не запрашивается\nАналитика: нет\nYouTube Music: "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
+            +"\nРекламный ID: не запрашивается\nАналитика: нет\nПриложение Shazam: не требуется\nYouTube Music (плеер): "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
             +"\nПеремотка: "+MediaBridge.supports(c,android.media.session.PlaybackState.ACTION_SEEK_TO)
             +"\n"+MediaBridge.outputLabel(this)+"\nСостояние плеера: "+(p==null?"—":p.getState())
             +"\n"+new MediaBridge(this).diagnosticSnapshot()+"\n"+model.report();
@@ -229,7 +229,7 @@ public final class MainActivity extends Activity {
     }
     private void about(){
         new AlertDialog.Builder(this).setTitle("Подхват / "+AppIdentity.label())
-            .setMessage("Экспериментальное приложение для YouTube Music. Распознавание: Java-адаптация открытого алгоритма SongRec / Audile, неофициальный интерфейс Shazam. Запуск: нативная медиасессия YouTube Music; резерв — публичный веб-поиск YouTube Music.\n\nЗаписи не сохраняются. Рекламного идентификатора, аналитики и встроенной рекламы нет. Shazam получает отпечаток; YouTube Music — название и исполнителя. Каждый сервис видит IP-адрес запроса.\n\nСинхронизация подтверждается таймкодом плеера; микросекундная точность не гарантируется. Разные издания, реклама и ограничения аккаунта могут мешать подхвату. Live Sync распознаёт фрагменты примерно раз в 3 секунды; на шуме пауза может определяться дольше.\n\nИсходники распространяются с APK под GPL-3.0-or-later.")
+            .setMessage("Экспериментальный подхват в YouTube Music. Обработка звука — Java-адаптация SongRec / Audile на этом телефоне. Приложение Shazam не требуется. Каталог отпечатков — HTTPS; плеер — нативная медиасессия YouTube Music, резерв — публичный веб-поиск.\n\nЗаписи не сохраняются. Рекламного идентификатора, аналитики и встроенной рекламы нет. Каталог получает отпечаток; YouTube Music — название и исполнителя, если выбран как плеер.\n\nСинхронизация подтверждается таймкодом плеера; микросекундная точность не гарантируется. Разные издания и ограничения аккаунта могут мешать подхвату.\n\nИсходники распространяются с APK под GPL-3.0-or-later.")
             .setPositiveButton("Закрыть",null).setNeutralButton("GPL",(d,w)->license()).setNegativeButton("Данные",(d,w)->privacy()).show();
     }
     private void privacy(){

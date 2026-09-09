@@ -13,6 +13,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
     $waveDist = Join-Path $waveProjectRoot 'dist'
     New-Item -ItemType Directory -Force -Path $waveDist | Out-Null
-    Copy-Item -LiteralPath "$waveScratch/app/outputs/apk/release/app-release.apk" -Destination "$waveDist/Podhvat-0.1.10.apk"
-    Get-FileHash -Algorithm SHA256 -LiteralPath "$waveDist/Podhvat-0.1.10.apk"
+    Copy-Item -LiteralPath "$waveScratch/app/outputs/apk/release/app-release.apk" -Destination "$waveDist/Podhvat-0.1.11.apk"
+    Get-FileHash -Algorithm SHA256 -LiteralPath "$waveDist/Podhvat-0.1.11.apk"
 } finally { Pop-Location }
