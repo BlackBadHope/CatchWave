@@ -1,0 +1,4 @@
+plugins { id 'com.android.application' version '8.9.1' apply false }
+if (providers.gradleProperty('catchwaveBuildRoot').isPresent()) {
+    layout.buildDirectory.set(file(providers.gradleProperty('catchwaveBuildRoot').get() + '/root'))
+}

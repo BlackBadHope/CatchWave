@@ -1,0 +1,28 @@
+Project: CatchWave / Podhvat
+Initial adaptation: 0.1.0; retained by the 0.1.5 release
+License: GPL-3.0-or-later
+Date: 2026-09-08
+
+Upstream: https://github.com/AudileTeam/Audile
+Audile commit: 5c8e77ccf1ee7e160602f466d49a7e26aabdd94b
+SongRec core revision recorded by Audile: 5afbf7361fcd72a3edaaeed24dc0ea150fd79385 (tag 0.7.3)
+
+Adapted source paths:
+core/recognition/native/songrecfp/src/fingerprinting/algorithm.rs
+core/recognition/native/songrecfp/src/fingerprinting/signature_format.rs
+core/recognition/native/songrecfp/src/fingerprinting/hanning.rs
+
+Integration format references:
+core/recognition/src/main/java/com/mrsep/musicrecognizer/core/recognition/shazam/ShazamRecognitionService.kt
+core/recognition/src/main/java/com/mrsep/musicrecognizer/core/recognition/shazam/ShazamResponseJson.kt
+core/metadata/src/main/java/com/mrsep/musicrecognizer/core/metadata/tracklink/youtube/YoutubeTrackLinksFetcher.kt
+core/metadata/src/main/java/com/mrsep/musicrecognizer/core/metadata/tracklink/odesli/OdesliTrackLinksFetcher.kt
+
+Public test fixture (not bundled in APK/source archive):
+https://raw.githubusercontent.com/AudileTeam/Audile/5c8e77ccf1ee7e160602f466d49a7e26aabdd94b/core/recognition/src/androidTest/assets/ss-s16le-1c-16khz.wav
+SHA256: 4d106f577e6331b619e31d880fc8ce2479437d92c3033a9a66ffa3afcccc4793
+Expected recording: Sneaky Snitch / Kevin MacLeod
+Format: PCM16 little-endian, mono, 16000 Hz, 10 seconds
+Probe: recognize first 6 seconds and seconds 2-8; confirm same track and offset delta 2000 +/- 250 ms.
+
+No third-party credentials, access tokens, account cookies, or private recordings are included.

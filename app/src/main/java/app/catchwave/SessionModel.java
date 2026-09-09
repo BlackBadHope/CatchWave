@@ -1,0 +1,37 @@
+package app.catchwave;
+
+import android.os.Handler;
+import android.os.Looper;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+public final class SessionModel {
+    public static final SessionModel INSTANCE=new SessionModel();
+    public volatile String status="Музыка рядом. Продолжи у себя.",detail="Нажми кнопку рядом с источником музыки.",diagnostic="";
+    public volatile boolean running,live,aligned,needsOpen,manualHold;
+    public volatile int progress;
+    public volatile double level;
+    public volatile long errorMs=Long.MAX_VALUE;
+    public volatile Track track;
+    public volatile boolean compatibleLaunchRequested;
+    public volatile long launchTicket;
+    private long traceStart;
+    private final java.util.ArrayDeque<String> events=new java.util.ArrayDeque<>();
+    public synchronized void resetTrace(){events.clear();traceStart=android.os.SystemClock.elapsedRealtime();diagnostic="";}
+    public synchronized void record(String event){
+        if(events.size()>=80)events.removeFirst();
+        events.addLast("+"+(android.os.SystemClock.elapsedRealtime()-traceStart)+" мс · "+event);
+        diagnostic=String.join("\n",events);
+    }
+    public String report(){
+        Track t=track;
+        return "CatchWave 0.1.5\nrunning="+running+" live="+live+" aligned="+aligned+" manualHold="+manualHold+"\n"+status+"\n"+detail
+            +(t==null?"":"\nТрек: "+t.title+" / "+t.artist+"\nКаталог: "+t.playbackTitle+" / "+t.playbackArtist+"\nСсылка: "+t.youtubeUrl+"\noffsetMs="+t.offsetMs+" anchorMs="+t.anchorMs+" sampleMs="+t.sampleDurationMs+" skew="+t.timeSkew)
+            +"\nРазница таймкодов, мс: "+(errorMs==Long.MAX_VALUE?"не измерена":Long.toString(errorMs))+"\n"+diagnostic;
+    }
+    private final Handler main=new Handler(Looper.getMainLooper());
+    private final CopyOnWriteArrayList<Runnable> listeners=new CopyOnWriteArrayList<>();
+    public void add(Runnable r){listeners.add(r);}
+    public void remove(Runnable r){listeners.remove(r);}
+    public void update(String status,String detail) {if(this.status.equals(status)&&this.detail.equals(detail))return;if(!this.status.equals(status))record("Статус: "+status);this.status=status;this.detail=detail;notifyChanged();}
+    public void notifyChanged(){main.post(()->{for(Runnable r:listeners)r.run();});}
+}
