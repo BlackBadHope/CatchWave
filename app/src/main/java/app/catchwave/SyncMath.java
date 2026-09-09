@@ -6,6 +6,9 @@ public final class SyncMath {
         return Math.round(timestampNs/1_000_000.0+(samples-window-framePosition)/16.0);
     }
     public static long recognitionInterval(boolean tracking){return tracking?3000:2500;}
+    public static long recognitionInterval(boolean tracking,int windowSamples){
+        return Math.max(recognitionInterval(tracking),windowSamples<=0?0:windowSamples/16);
+    }
     public static long timelineDifference(Track a,Track b){return (a.offsetMs-a.anchorMs)-(b.offsetMs-b.anchorMs);}
     public static int captureWindow(long samples,boolean firstRequest) {
         int needed=firstRequest?48000:96000;

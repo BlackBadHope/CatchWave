@@ -159,7 +159,7 @@ public final class SyncService extends Service {
                 if(now-lastUi>250){model.progress=(int)Math.min(100,samples*100/48000);model.notifyChanged();lastUi=now;}
                 if(model.live&&model.track!=null&&now-lastLoud>1400)main.post(this::onSilence);
                 int window=SyncMath.captureWindow(samples,lastSubmitted==0||shortCapturePreferred);
-                long interval=SyncMath.recognitionInterval(model.track!=null);
+                long interval=SyncMath.recognitionInterval(model.track!=null,window);
                 if(window>0 && (!shortCapturePreferred||samples-lastSubmittedSamples>=window) && now-lastSubmitted>=interval && rms>0.001 && requesting.compareAndSet(false,true)){
                     short[] sample=new short[window];for(int i=0;i<window;i++)sample[i]=ring[(index-window+ring.length+i)%ring.length];
                     if(!SyncMath.stableFragment(sample)){
@@ -453,8 +453,10 @@ public final class SyncService extends Service {
     }
     private void haltOwnedQueue(){
         if(!ownsQueue||model.live||keepPlayerOnExit)return;
-        MediaBridge.holdQueue(bridge.controller());
-        if(MediaBridge.pausePlayer(bridge.controller()))model.record("Очередь YouTube Music остановлена");
+        MediaController c=bridge.controller();
+        MediaBridge.holdQueue(c);
+        if(MediaBridge.isTrack(c,model.track)){ownsQueue=false;return;}
+        if(MediaBridge.pausePlayer(c))model.record("Очередь YouTube Music остановлена");
         ownsQueue=false;
     }
     private static boolean isPlayerError(MediaController c){PlaybackState p=c==null?null:c.getPlaybackState();return p!=null&&p.getState()==PlaybackState.STATE_ERROR;}

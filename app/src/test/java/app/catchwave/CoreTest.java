@@ -13,21 +13,24 @@ public class CoreTest {
     @Test public void extendedMixIsNotTheOriginalRecording(){Track t=new Track("1","Grass Skirt Chase","Scatta","",1,0,0);assertFalse(t.matches("Grass Skirt Chase Extended 5 minutes Mix","Scatta"));}
     @Test public void firstCaptureUsesThreeSecondsAndRetryUsesSix(){assertEquals(0,SyncMath.captureWindow(47999,true));assertEquals(48000,SyncMath.captureWindow(48000,true));assertEquals(0,SyncMath.captureWindow(95999,false));assertEquals(96000,SyncMath.captureWindow(96000,false));}
     @Test public void residualThirdSecondNeedsAnotherCorrection(){assertTrue(SyncMath.shouldSeek(300,1500,1));assertFalse(SyncMath.shouldSeek(100,1500,1));assertFalse(SyncMath.shouldSeek(300,1000,1));}
-    @Test public void firstSeekUsesPersistedLagNotZero(){
+    @Test public void seekCommandIsTimelinePositionNotCallbackLag(){
         assertEquals(10000,SeekClock.command(10000,-1));
-        assertEquals(10248,SeekClock.command(10000,248));
+        assertEquals(10000,SeekClock.command(10000,248));
+        assertEquals(10000,SeekClock.command(10000,180));
     }
     @Test public void uncompensatedSeekLagEqualsDeltaAfterSettle(){
         long tEstSend=10000,lag=180;
         assertEquals(10000,SeekClock.command(tEstSend,-1));
         assertEquals(180,SeekClock.delta(tEstSend+lag,tEstSend));
-        assertEquals(10180,SeekClock.command(tEstSend,180));
-        assertEquals(0,SeekClock.delta(tEstSend+lag,10180));
         assertEquals(180,SeekClock.lag(1000,1180));
         assertEquals(180,SeekClock.blend(-1,180));
         assertEquals(120,SeekClock.blend(180,60));
         assertTrue(SeekClock.settled(1400,1000,1180,10000+220,10000));
         assertFalse(SeekClock.settled(1100,1000,1180,10000,10000));
+    }
+    @Test public void sixSecondWindowsDoNotOverlap(){
+        assertEquals(6000,SyncMath.recognitionInterval(false,96000));
+        assertEquals(3000,SyncMath.recognitionInterval(true,48000));
     }
     @Test public void recognitionTimeAndLaunchTimeAreIncluded(){Track t=new Track("1","Song","Artist","",83400,10000,0);assertEquals(88600,t.positionAt(15200,0));assertEquals(88800,t.positionAt(15200,200));}
     @Test public void sourceBeginningCannotSeekBeforeZero(){Track t=new Track("1","Song","Artist","",-1000,10000,0);assertEquals(0,t.positionAt(10200,0));}

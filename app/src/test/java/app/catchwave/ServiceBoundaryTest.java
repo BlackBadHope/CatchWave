@@ -62,10 +62,17 @@ public class ServiceBoundaryTest {
     }
     @Test public void failedSyncHaltsQueueInsteadOfLeavingAutoplay()throws Exception{
         set("ownsQueue",true);set("keepPlayerOnExit",false);set("active",true);
+        metadata("Wake Up The President","other");state(PlaybackState.STATE_PLAYING,1000,now);
         Method finish=SyncService.class.getDeclaredMethod("finish",String.class,String.class);finish.setAccessible(true);
         finish.invoke(service,"Не удалось подтвердить синхронизацию","очередь");
         assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
         assertFalse(m.diagnostic.contains("Возвращено прежнее воспроизведение"));
+    }
+    @Test public void failedSyncDoesNotMuteTheMatchedRecording()throws Exception{
+        set("ownsQueue",true);set("keepPlayerOnExit",false);set("active",true);
+        Method finish=SyncService.class.getDeclaredMethod("finish",String.class,String.class);finish.setAccessible(true);
+        finish.invoke(service,"Не удалось подтвердить синхронизацию","очередь");
+        assertNotEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
     }
     @Test public void failedListenDoesNotResumePreviousPlaylist()throws Exception{
         m.track=null;set("ownsQueue",true);set("keepPlayerOnExit",false);set("active",true);set("resumeFresh",true);

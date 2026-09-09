@@ -5,9 +5,9 @@ final class SeekClock {
     static final long SETTLE_MS=200;
     static final long ACK_MS=400;
     static final long LAG_MAX_MS=1500;
+    /** YouTube Music seekTo is a timeline position. Callback delay is not added to the target: adding it overshoots and then pauses. */
     static long command(long tEst,long learnedLagMs){
-        long lag=learnedLagMs<0?0:Math.min(LAG_MAX_MS,learnedLagMs);
-        return tEst+lag;
+        return tEst;
     }
     static long delta(long tEst,long tSession){return tEst-tSession;}
     static long lag(long seekSentAt,long sessionUpdateAt){
