@@ -119,7 +119,8 @@ public final class SyncService extends Service {
         model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.tEstMs=model.tSessionAfterSeekMs=model.seekLagMs=Long.MIN_VALUE;model.progress=0;
         captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";prefetchKey="";ownsQueue=false;keepPlayerOnExit=false;
         sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;pausedByUs=false;
-        sourceTimeline.reset();shortCapturePreferred=false;learnedSeekLag=-1;awaitingSeekSettle=false;seekSentAt=seekCommanded=seekEstAtSend=0;
+        sourceTimeline.reset();shortCapturePreferred=false;learnedSeekLag=getSharedPreferences("settings",MODE_PRIVATE).getLong("seek_lag_ms",-1);awaitingSeekSettle=false;seekSentAt=seekCommanded=seekEstAtSend=0;model.needsAudioRefine=false;
+        if(learnedSeekLag>=0)model.record("Первый seek: сохранённый seek_lag="+learnedSeekLag+" мс");
         capturePause=new CapturePause(bridge.controller());
         if(!model.live)claimQueue(bridge.controller());
         model.record("Свежий замер #"+captureGeneration+"; пауза OnePlus запрошена="+capturePause.requested());
@@ -364,8 +365,7 @@ public final class SyncService extends Service {
             timeoutAcquire(now);return;
         }
         if(!Float.isFinite(p.getPlaybackSpeed())||Math.abs(p.getPlaybackSpeed()-1f)>0.005f){finish("Плеер меняет скорость","Для синхронизации нужна обычная скорость воспроизведения 1×.");return;}
-        long adjustment=getSharedPreferences("settings",MODE_PRIVATE).getInt("adjustment",0);
-        long tEst=t.positionAt(now,adjustment);
+        long tEst=estimatePosition(t,now);
         MediaMetadata meta=c.getMetadata();long duration=meta==null?0:meta.getLong(MediaMetadata.METADATA_KEY_DURATION);
         if(duration>0&&tEst>=duration-500){finish("Фрагмент за пределами записи","Версии песни могут отличаться. Попробуйте снова на следующем фрагменте.");return;}
         long tSession=SyncMath.playerPosition(p.getPosition(),p.getLastPositionUpdateTime(),p.getPlaybackSpeed(),now,true);
@@ -377,7 +377,7 @@ public final class SyncService extends Service {
                 return;
             }
             long lag=SeekClock.lag(seekSentAt,p.getLastPositionUpdateTime());
-            learnedSeekLag=SeekClock.blend(learnedSeekLag,lag);
+            rememberSeekLag(lag);
             awaitingSeekSettle=false;
             model.tEstMs=tEst;model.tSessionAfterSeekMs=tSession;model.seekLagMs=lag;
             model.record("t_est="+tEst+" t_est_at_send="+seekEstAtSend+" t_session_after_seek="+tSession+" Δ="+delta+" seek_lag="+lag+" learned_lag="+learnedSeekLag);
@@ -409,8 +409,20 @@ public final class SyncService extends Service {
         model.aligned=true;
         claimQueue(c);armQueueGuard(c,t);
         model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за согласованностью замеров и скоростью источника.":"Позиция проверена несколькими замерами (3×≤120 мс — согласованность распознавателя, не слышимый sync). YouTube Music подтвердил таймкод.");
-        if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. Дальше плеер сам. Слышимый сдвиг — «Уточнить по звуку», если Android даёт захват. Очередь в конце записи остановлю.");}
+        if(!model.live){
+            cancelRequests();model.level=0;model.guardingTrack=true;model.needsAudioRefine=true;
+            startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+            model.update("Таймкод установлен · один трек","Микрофон выключен. Сверяю внутренний звук YouTube Music с микрофоном, если Android даст захват. Очередь в конце записи остановлю.");
+        }
         model.notifyChanged();
+    }
+    private long estimatePosition(Track t,long now){
+        android.content.SharedPreferences prefs=getSharedPreferences("settings",MODE_PRIVATE);
+        return t.positionAt(now,prefs.getInt("adjustment",0)+prefs.getInt("audio_lag_ms",0));
+    }
+    private void rememberSeekLag(long lag){
+        learnedSeekLag=SeekClock.blend(learnedSeekLag,lag);
+        if(learnedSeekLag>=0)getSharedPreferences("settings",MODE_PRIVATE).edit().putLong("seek_lag_ms",learnedSeekLag).apply();
     }
     private void claimQueue(MediaController c){
         ownsQueue=true;MediaBridge.holdQueue(c);
@@ -466,7 +478,7 @@ public final class SyncService extends Service {
             haltOwnedQueue();
         }
         model.record(title+"; ошибка таймкода="+model.errorMs+" мс");
-        active=false;captureDone=true;model.running=false;model.manualHold=false;model.level=0;model.needsOpen=false;model.update(title,detail);
+        active=false;captureDone=true;model.running=false;model.manualHold=false;model.needsAudioRefine=false;model.level=0;model.needsOpen=false;model.update(title,detail);
         model.compatibleLaunchRequested=false;
         main.removeCallbacks(tick);main.removeCallbacks(routeCheck);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }

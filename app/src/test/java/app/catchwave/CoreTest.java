@@ -13,6 +13,10 @@ public class CoreTest {
     @Test public void extendedMixIsNotTheOriginalRecording(){Track t=new Track("1","Grass Skirt Chase","Scatta","",1,0,0);assertFalse(t.matches("Grass Skirt Chase Extended 5 minutes Mix","Scatta"));}
     @Test public void firstCaptureUsesThreeSecondsAndRetryUsesSix(){assertEquals(0,SyncMath.captureWindow(47999,true));assertEquals(48000,SyncMath.captureWindow(48000,true));assertEquals(0,SyncMath.captureWindow(95999,false));assertEquals(96000,SyncMath.captureWindow(96000,false));}
     @Test public void residualThirdSecondNeedsAnotherCorrection(){assertTrue(SyncMath.shouldSeek(300,1500,1));assertFalse(SyncMath.shouldSeek(100,1500,1));assertFalse(SyncMath.shouldSeek(300,1000,1));}
+    @Test public void firstSeekUsesPersistedLagNotZero(){
+        assertEquals(10000,SeekClock.command(10000,-1));
+        assertEquals(10248,SeekClock.command(10000,248));
+    }
     @Test public void uncompensatedSeekLagEqualsDeltaAfterSettle(){
         long tEstSend=10000,lag=180;
         assertEquals(10000,SeekClock.command(tEstSend,-1));

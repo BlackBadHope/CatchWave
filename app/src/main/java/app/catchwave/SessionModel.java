@@ -7,7 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class SessionModel {
     public static final SessionModel INSTANCE=new SessionModel();
     public volatile String status="Музыка рядом. Продолжи у себя.",detail="Нажми кнопку рядом с источником музыки.",diagnostic="";
-    public volatile boolean running,live,aligned,needsOpen,manualHold,guardingTrack;
+    public volatile boolean running,live,aligned,needsOpen,manualHold,guardingTrack,needsAudioRefine;
     public volatile boolean measuringAudio,audioVerified;
     public volatile double audioLagMs=Double.NaN;
     public volatile int progress;

@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
     private Switch live;
     private WaveView wave;
     private ProgressBar progress;
-    private boolean pendingStart;
+    private boolean pendingStart,refinePrompted;
     private LinearLayout playerPanel;
     private TextView playerTitle,playerClock;
     private TextView playerFailure;
@@ -129,6 +129,13 @@ public final class MainActivity extends Activity {
         renderPlayer();
         if(model.manualHold){model.compatibleLaunchRequested=false;playerLaunch.cancel();}
         if(visible&&model.running&&!model.manualHold&&model.compatibleLaunchRequested&&getPreferences().getBoolean("compatibleLaunch",false))openTrack();
+        if(!model.running)refinePrompted=false;
+        if(visible&&model.needsAudioRefine&&!model.measuringAudio&&!refinePrompted&&!model.live){
+            MediaController player=new MediaBridge(this).controller();
+            if(new CalibrationTarget(player,model.track).valid(player,model)){
+                refinePrompted=true;model.needsAudioRefine=false;calibrateAudio();
+            }
+        }
     }
     private void buildPlayer(LinearLayout parent){
         playerPanel=new LinearLayout(this);playerPanel.setOrientation(LinearLayout.VERTICAL);playerPanel.setPadding(dp(16),dp(12),dp(16),dp(12));playerPanel.setBackground(shape(PANEL,18));

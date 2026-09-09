@@ -61,6 +61,7 @@ public final class AudioCalibrationService extends Service {
         try{
             int uid=getPackageManager().getApplicationInfo(MediaBridge.PACKAGE,0).uid;
             AudioCorrection correction=new AudioCorrection();
+            boolean storedLag=false;
             model.record("Уточнить по звуку: старт захвата; seek_lag="+(model.seekLagMs==Long.MIN_VALUE?"—":Long.toString(model.seekLagMs)));
             Thread.sleep(350);
             for(int pass=0;pass<3;pass++){
@@ -78,6 +79,12 @@ public final class AudioCalibrationService extends Service {
                     continue;
                 }
                 model.audioLagMs=estimate.lagMs;
+                if(!storedLag){
+                    int next=(int)Math.max(-1200,Math.min(1200,getSharedPreferences("settings",MODE_PRIVATE).getInt("audio_lag_ms",0)+Math.round(estimate.lagMs)));
+                    getSharedPreferences("settings",MODE_PRIVATE).edit().putInt("audio_lag_ms",next).apply();
+                    storedLag=true;
+                    model.record("Сохранена акустическая поправка "+next+" мс для следующего подхвата");
+                }
                 if(Math.abs(estimate.lagMs)<=15){model.audioVerified=true;result=String.format(Locale.ROOT,"Внутренний звук совпал: %+.1f мс. Задержка самого динамика сюда не входит.",estimate.lagMs);break;}
                 if(pass==2){result=String.format(Locale.ROOT,"После двух поправок осталось %+.1f мс. Точное совпадение не подтверждено; дальнейшую перемотку остановил.",estimate.lagMs);break;}
                 long advance=correction.nextAdvance(estimate.lagMs),position=CalibrationTarget.position(controller),to=position+advance;
