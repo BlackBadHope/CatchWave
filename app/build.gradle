@@ -6,7 +6,7 @@ android {
     testBuildType 'release'
     namespace 'app.catchwave'
     compileSdk 36
-    defaultConfig { applicationId 'app.catchwave'; minSdk 30; targetSdk 35; versionCode 12; versionName '0.1.11'; testInstrumentationRunner 'app.catchwave.TransportProbe' }
+    defaultConfig { applicationId 'app.catchwave'; minSdk 30; targetSdk 35; versionCode 13; versionName '0.1.12'; testInstrumentationRunner 'app.catchwave.TransportProbe' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
     buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }

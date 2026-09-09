@@ -48,6 +48,46 @@ public class ServiceBoundaryTest {
         tick();assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
     }
     @Test public void explicitStopReleasesEndGuard()throws Exception{tick();service.onStartCommand(new Intent().setAction(SyncService.STOP),0,1);assertNull(get("endGuard"));assertFalse(m.guardingTrack);assertFalse(m.running);}
+    @Test public void oneShotPausesPlayerWhileListeningSoQueueCannotAdvance()throws Exception{
+        m.track=null;set("ownsQueue",false);set("resumeFresh",true);
+        tick();assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
+        assertEquals(true,get("ownsQueue"));
+    }
+    @Test public void oneShotPausesForeignQueueItemDuringHandoff()throws Exception{
+        set("ownsQueue",false);set("initialSeek",false);set("lastSeek",0L);set("resumeFresh",false);
+        metadata("Wake Up The President","other");state(PlaybackState.STATE_PLAYING,1000,now);
+        tick();assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
+        assertFalse(m.aligned);
+        assertEquals(true,get("ownsQueue"));
+    }
+    @Test public void failedSyncHaltsQueueInsteadOfLeavingAutoplay()throws Exception{
+        set("ownsQueue",true);set("keepPlayerOnExit",false);set("active",true);
+        Method finish=SyncService.class.getDeclaredMethod("finish",String.class,String.class);finish.setAccessible(true);
+        finish.invoke(service,"Не удалось подтвердить синхронизацию","очередь");
+        assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
+        assertFalse(m.diagnostic.contains("Возвращено прежнее воспроизведение"));
+    }
+    @Test public void failedListenDoesNotResumePreviousPlaylist()throws Exception{
+        m.track=null;set("ownsQueue",true);set("keepPlayerOnExit",false);set("active",true);set("resumeFresh",true);
+        CapturePause pause=new CapturePause(player.getController());
+        state(PlaybackState.STATE_PAUSED,10000,now);
+        assertTrue(pause.ready());
+        set("capturePause",pause);
+        Method finish=SyncService.class.getDeclaredMethod("finish",String.class,String.class);finish.setAccessible(true);
+        finish.invoke(service,"Не получилось распознать","очередь");
+        assertNotEquals(PlaybackState.ACTION_PLAY,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
+        assertFalse(m.diagnostic.contains("Возвращено прежнее воспроизведение"));
+    }
+    @Test public void explicitStopMayRestoreListenPause()throws Exception{
+        m.track=null;set("keepPlayerOnExit",false);set("active",true);set("resumeFresh",true);
+        CapturePause pause=new CapturePause(player.getController());
+        state(PlaybackState.STATE_PAUSED,10000,now);
+        assertTrue(pause.ready());
+        set("capturePause",pause);
+        service.onStartCommand(new Intent().setAction(SyncService.STOP),0,1);
+        assertEquals(PlaybackState.ACTION_PLAY,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
+        assertFalse(m.running);
+    }
     @Test public void seekSettleLogsEstimateSessionDeltaAndLag()throws Exception{
         set("initialSeek",false);set("lastSeek",0L);set("seekAttempts",0);set("awaitingSeekSettle",false);set("learnedSeekLag",-1L);
         m.resetTrace();tick();

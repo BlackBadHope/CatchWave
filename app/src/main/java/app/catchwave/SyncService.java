@@ -48,7 +48,7 @@ public final class SyncService extends Service {
     private int seekAttempts,matchCount;
     private long learnedSeekLag=-1,seekSentAt,seekCommanded,seekEstAtSend;
     private boolean awaitingSeekSettle;
-    private boolean pausedByUs,initialSeek,resolveRequested,playRequested,resumeFresh;
+    private boolean pausedByUs,initialSeek,resolveRequested,playRequested,resumeFresh,ownsQueue,keepPlayerOnExit;
     private Thread microphone;
     private AudioManager audioManager;
     // Output selection can change without any device being disconnected.
@@ -70,13 +70,13 @@ public final class SyncService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){
         if(intent==null)return START_NOT_STICKY;
-        if(OPEN_STARTED.equals(intent.getAction())){if(active){compatibleOpening=true;acquireStarted=lastLaunchRequest=SystemClock.elapsedRealtime();model.record("Открытие выбранной записи через экран YouTube Music");}else stopSelf();return START_NOT_STICKY;}
+        if(OPEN_STARTED.equals(intent.getAction())){if(active){compatibleOpening=true;acquireStarted=lastLaunchRequest=SystemClock.elapsedRealtime();claimQueue(bridge.controller());model.record("Открытие выбранной записи через экран YouTube Music");}else stopSelf();return START_NOT_STICKY;}
         if(OPEN_FAILED.equals(intent.getAction())){finish("Не удалось открыть YouTube Music","Проверь установку плеера и повтори подхват.");return START_NOT_STICKY;}
         if(REJECT.equals(intent.getAction())){pauseOwned();if(model.track!=null)client.invalidate(model.track);model.aligned=false;model.launchTicket++;finish("Это другая запись","Неверное соответствие удалено из кеша. Повтори на другом фрагменте или выбери нужную версию в YouTube Music.");return START_NOT_STICKY;}
         if(USER_PAUSE.equals(intent.getAction())||USER_HOLD.equals(intent.getAction())||USER_RESUME.equals(intent.getAction())){
             if(active)userControl(intent.getAction());else stopSelf();return START_NOT_STICKY;
         }
-        if(STOP.equals(intent.getAction())) {finish("Сеанс остановлен","Управление музыкой снова у тебя.");return START_NOT_STICKY;}
+        if(STOP.equals(intent.getAction())) {keepPlayerOnExit=true;finish("Сеанс остановлен","Управление музыкой снова у тебя.");return START_NOT_STICKY;}
         if(ADJUST.equals(intent.getAction())) {seekAttempts=0;lastSeek=0;initialSeek=false;awaitingSeekSettle=false;return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         boolean live=intent.getBooleanExtra("live",false);
@@ -117,10 +117,11 @@ public final class SyncService extends Service {
         model.compatibleLaunchRequested=false;model.launchTicket++;compatibleOpening=false;
         if(capturePause!=null)capturePause.release();
         model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.tEstMs=model.tSessionAfterSeekMs=model.seekLagMs=Long.MIN_VALUE;model.progress=0;
-        captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";prefetchKey="";
+        captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";prefetchKey="";ownsQueue=false;keepPlayerOnExit=false;
         sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;pausedByUs=false;
         sourceTimeline.reset();shortCapturePreferred=false;learnedSeekLag=-1;awaitingSeekSettle=false;seekSentAt=seekCommanded=seekEstAtSend=0;
         capturePause=new CapturePause(bridge.controller());
+        if(!model.live)claimQueue(bridge.controller());
         model.record("Свежий замер #"+captureGeneration+"; пауза OnePlus запрошена="+capturePause.requested());
         model.update("Подготовка микрофона",capturePause.requested()?"Ставлю YouTube Music на паузу, чтобы слышать источник.":"Готовлю новый замер источника…");
         final int generation=captureGeneration;
@@ -233,6 +234,7 @@ public final class SyncService extends Service {
             MediaController player=bridge.controller();
             try{remotelyRequested=MediaBridge.isTrack(player,match)&&!isPlayerError(player)||!(compatible&&isPlayerError(player))&&bridge.requestTrack(match);}catch(Exception ignored){}
             if(remotelyRequested){
+                claimQueue(player);
                 model.record("Команда запуска отправлена; жду подтверждения записи");
                 nativeDeadline=acquireStarted+4000;model.needsOpen=false;
                 model.update("Найдено: "+match.title,"YouTube Music открывает запись. Подхватываю текущий момент…");
@@ -278,11 +280,11 @@ public final class SyncService extends Service {
                 model.track.playbackTitle=match.playbackTitle;model.track.playbackArtist=match.playbackArtist;
                 model.record("Каталог: "+match.playbackTitle+" / "+match.playbackArtist+"; ссылка="+resolved);
                 if(!resolved.isEmpty()&&getSharedPreferences("settings",MODE_PRIVATE).getBoolean("compatibleLaunch",false)){
-                    compatibleOpening=true;model.needsOpen=true;model.compatibleLaunchRequested=true;
+                    compatibleOpening=true;ownsQueue=true;model.needsOpen=true;model.compatibleLaunchRequested=true;
                     model.update("Запускаю найденную запись","YouTube Music кратко откроется. После установки таймкода вернёмся в «Подхват».");
                     notifyStatus("Открой «Подхват», чтобы запустить найденную запись");return;
                 }
-                boolean remote=false;if(!resolved.isEmpty())try{lastLaunchRequest=SystemClock.elapsedRealtime();remote=bridge.requestTrack(model.track);}catch(Exception ignored){}
+                boolean remote=false;if(!resolved.isEmpty())try{lastLaunchRequest=SystemClock.elapsedRealtime();remote=bridge.requestTrack(model.track);if(remote)claimQueue(bridge.controller());}catch(Exception ignored){}
                 model.needsOpen=!remote;
                 model.record(resolved.isEmpty()?"В каталоге не найдена та же запись":"Прямая ссылка найдена; команда отправлена="+remote);
                 model.update("Найдено: "+model.track.title,remote?"Плеер запускает запись в фоне…":"Плееру нужно ручное открытие. Нажмите «Открыть YouTube Music», затем вернитесь сюда.");
@@ -311,8 +313,11 @@ public final class SyncService extends Service {
     private void syncTick(){
         long now=SystemClock.elapsedRealtime();
         if(now-started>30*60*1000){pauseOwned();finish("Сеанс завершён","Лимит одного сеанса Live Sync — 30 минут. Можно запустить снова.");return;}
-        if(model.manualHold||resumeFresh)return;
-        Track t=model.track;if(t==null)return;
+        if(model.manualHold)return;
+        restrainQueue();
+        if(resumeFresh)return;
+        Track t=model.track;
+        if(t==null)return;
         if(endGuard!=null){
             TrackEndGuard.State boundary=endGuard.check(now);
             if(boundary==TrackEndGuard.State.FAILED){model.aligned=false;finish("Не удалось подтвердить паузу в конце трека","Проверь состояние YouTube Music. Приложение не подтвердило остановку очереди.");return;}
@@ -324,7 +329,7 @@ public final class SyncService extends Service {
                 model.update("Жду следующий трек источника","Очередь YouTube Music приостановлена. Подтверждаю следующую песню микрофоном.");return;
             }
             if(boundary==TrackEndGuard.State.PAUSING){model.update("Останавливаю очередь плеера","Жду подтверждения паузы YouTube Music.");return;}
-            if(!model.live)return;
+            if(model.aligned&&!model.live)return;
         }
         if(waitingNextSource)return;
         if(model.live&&now-lastMatch>16000&&!pausedByUs&&model.aligned){sourceLostAt=now;sourceResumeReady=false;sourceTimeline.reset();pauseOwned();model.update("Источник потерян","Музыка на паузе. Продолжаю искать подтверждённое совпадение.");}
@@ -342,6 +347,7 @@ public final class SyncService extends Service {
             if(!compatibleOpening&&nativeDeadline>0&&now>=nativeDeadline)resolveLink(t);
             model.aligned=false;model.update("Плеер ещё не открыл найденную запись",t.title+" / "+t.artist+". Если распознана другая песня, повтори подхват на другом фрагменте.");timeoutAcquire(now);return;
         }
+        if(!model.live)armQueueGuard(c,t);
         if(!t.hasPosition()){finish("Песня найдена, точная позиция недоступна","Сервис не вернул пригодный таймкод или источник меняет скорость записи.");return;}
         if(!MediaBridge.supports(c,PlaybackState.ACTION_SEEK_TO)){finish("Плеер не разрешает перемотку","YouTube Music не объявил поддержку перемотки для этой записи. Проверьте тип контента и ограничения аккаунта.");return;}
         if(p==null){timeoutAcquire(now);return;}
@@ -401,13 +407,36 @@ public final class SyncService extends Service {
     }
     private void confirmAligned(MediaController c,Track t){
         model.aligned=true;
+        claimQueue(c);armQueueGuard(c,t);
         model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за согласованностью замеров и скоростью источника.":"Позиция проверена несколькими замерами (3×≤120 мс — согласованность распознавателя, не слышимый sync). YouTube Music подтвердил таймкод.");
-        if(endGuard==null){
-            endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
-            model.record("Контроль конца выбранной записи включён");
-            if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. Дальше плеер сам. Слышимый сдвиг — «Уточнить по звуку», если Android даст захват. Задержка динамика здесь не измерена.");}
-        }
+        if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. Дальше плеер сам. Слышимый сдвиг — «Уточнить по звуку», если Android даёт захват. Очередь в конце записи остановлю.");}
         model.notifyChanged();
+    }
+    private void claimQueue(MediaController c){
+        ownsQueue=true;MediaBridge.holdQueue(c);
+    }
+    private void restrainQueue(){
+        MediaController c=bridge.controller();
+        Track t=model.track;
+        if(!model.live){
+            claimQueue(c);
+            if(t==null||!MediaBridge.isTrack(c,t)){
+                if(MediaBridge.pausePlayer(c))model.record(t==null?"Очередь остановлена на время подхвата":"Очередь: чужая запись поставлена на паузу");
+            }
+            return;
+        }
+        if(t==null&&MediaBridge.pausePlayer(c))model.record("Очередь остановлена на время подхвата");
+    }
+    private void armQueueGuard(MediaController c,Track t){
+        if(endGuard!=null||c==null||t==null)return;
+        endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
+        model.record("Контроль очереди YouTube Music включён");
+    }
+    private void haltOwnedQueue(){
+        if(!ownsQueue||model.live||keepPlayerOnExit)return;
+        MediaBridge.holdQueue(bridge.controller());
+        if(MediaBridge.pausePlayer(bridge.controller()))model.record("Очередь YouTube Music остановлена");
+        ownsQueue=false;
     }
     private static boolean isPlayerError(MediaController c){PlaybackState p=c==null?null:c.getPlaybackState();return p!=null&&p.getState()==PlaybackState.STATE_ERROR;}
     private void timeoutAcquire(long now){if(now-acquireStarted>20000)finish("Не удалось открыть совпавшую запись",playerError.isEmpty()?"Распознаватель и YouTube Music могут выбрать разные версии. Проверь найденную песню, открой нужную запись и повтори подхват.":"YouTube Music: "+playerError+" Открой запись вручную и повтори подхват.");}
@@ -430,7 +459,12 @@ public final class SyncService extends Service {
         stopService(new Intent(this,AudioCalibrationService.class));
         closeEndGuard();
         cancelRequests();
-        if(capturePause!=null&&capturePause.restore(bridge.controller()))model.record("Возвращено прежнее воспроизведение после неудачного замера");
+        if(keepPlayerOnExit){
+            if(capturePause!=null&&capturePause.restore(bridge.controller()))model.record("Возвращено прежнее воспроизведение");
+        }else {
+            if(capturePause!=null)capturePause.release();
+            haltOwnedQueue();
+        }
         model.record(title+"; ошибка таймкода="+model.errorMs+" мс");
         active=false;captureDone=true;model.running=false;model.manualHold=false;model.level=0;model.needsOpen=false;model.update(title,detail);
         model.compatibleLaunchRequested=false;
@@ -440,7 +474,12 @@ public final class SyncService extends Service {
         stopService(new Intent(this,AudioCalibrationService.class));
         closeEndGuard();
         cancelRequests();
-        if(capturePause!=null)capturePause.restore(bridge.controller());
+        if(keepPlayerOnExit){
+            if(capturePause!=null)capturePause.restore(bridge.controller());
+        }else {
+            if(capturePause!=null)capturePause.release();
+            if(!model.live)MediaBridge.pausePlayer(bridge.controller());
+        }
         active=false;captureDone=true;model.running=false;main.removeCallbacksAndMessages(null);
         if(microphone!=null)microphone.interrupt();network.shutdownNow();resolver.shutdownNow();
         if(audioManager!=null)audioManager.unregisterAudioDeviceCallback(routeCallback);
