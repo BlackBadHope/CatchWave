@@ -13,12 +13,13 @@ public final class SessionModel {
     public volatile int progress;
     public volatile double level;
     public volatile long errorMs=Long.MAX_VALUE;
+    public volatile long tEstMs=Long.MIN_VALUE,tSessionAfterSeekMs=Long.MIN_VALUE,seekLagMs=Long.MIN_VALUE;
     public volatile Track track;
     public volatile boolean compatibleLaunchRequested;
     public volatile long launchTicket;
     private long traceStart;
     private final java.util.ArrayDeque<String> events=new java.util.ArrayDeque<>();
-    public synchronized void resetTrace(){events.clear();traceStart=android.os.SystemClock.elapsedRealtime();diagnostic="";}
+    public synchronized void resetTrace(){events.clear();traceStart=android.os.SystemClock.elapsedRealtime();diagnostic="";tEstMs=tSessionAfterSeekMs=seekLagMs=Long.MIN_VALUE;}
     public synchronized void record(String event){
         if(events.size()>=80)events.removeFirst();
         events.addLast("+"+(android.os.SystemClock.elapsedRealtime()-traceStart)+" мс · "+event);
@@ -26,8 +27,10 @@ public final class SessionModel {
     }
     public String report(){
         Track t=track;
-        return "CatchWave 0.1.8\nrunning="+running+" live="+live+" aligned="+aligned+" manualHold="+manualHold+" guardingTrack="+guardingTrack+" measuringAudio="+measuringAudio+" audioLagMs="+audioLagMs+" audioVerified="+audioVerified+"\n"+status+"\n"+detail
+        return AppIdentity.label()+"\nrunning="+running+" live="+live+" aligned="+aligned+" manualHold="+manualHold+" guardingTrack="+guardingTrack+" measuringAudio="+measuringAudio+" audioLagMs="+audioLagMs+" audioVerified="+audioVerified+"\n"+status+"\n"+detail
             +(t==null?"":"\nТрек: "+t.title+" / "+t.artist+"\nКаталог: "+t.playbackTitle+" / "+t.playbackArtist+"\nСсылка: "+t.youtubeUrl+"\noffsetMs="+t.offsetMs+" anchorMs="+t.anchorMs+" sampleMs="+t.sampleDurationMs+" skew="+t.timeSkew)
+            +"\nt_est="+(tEstMs==Long.MIN_VALUE?"—":Long.toString(tEstMs))+" t_session_after_seek="+(tSessionAfterSeekMs==Long.MIN_VALUE?"—":Long.toString(tSessionAfterSeekMs))
+            +" Δ="+(errorMs==Long.MAX_VALUE?"не измерена":Long.toString(errorMs))+" seek_lag="+(seekLagMs==Long.MIN_VALUE?"—":Long.toString(seekLagMs))
             +"\nРазница таймкодов, мс: "+(errorMs==Long.MAX_VALUE?"не измерена":Long.toString(errorMs))+"\n"+diagnostic;
     }
     private final Handler main=new Handler(Looper.getMainLooper());

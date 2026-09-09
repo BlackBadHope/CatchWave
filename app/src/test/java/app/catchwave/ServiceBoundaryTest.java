@@ -48,4 +48,21 @@ public class ServiceBoundaryTest {
         tick();assertEquals(PlaybackState.ACTION_PAUSE,Shadows.shadowOf(player.getController().getTransportControls()).getLastPerformedAction());
     }
     @Test public void explicitStopReleasesEndGuard()throws Exception{tick();service.onStartCommand(new Intent().setAction(SyncService.STOP),0,1);assertNull(get("endGuard"));assertFalse(m.guardingTrack);assertFalse(m.running);}
+    @Test public void seekSettleLogsEstimateSessionDeltaAndLag()throws Exception{
+        set("initialSeek",false);set("lastSeek",0L);set("seekAttempts",0);set("awaitingSeekSettle",false);set("learnedSeekLag",-1L);
+        m.resetTrace();tick();
+        assertEquals(true,get("awaitingSeekSettle"));
+        assertTrue(m.diagnostic.contains("t_est="));
+        assertTrue(m.diagnostic.contains("commanded="));
+        long sent=(Long)get("seekSentAt");long commanded=(Long)get("seekCommanded");
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(Duration.ofMillis(250));
+        long later=SystemClock.elapsedRealtime();
+        state(PlaybackState.STATE_PLAYING,commanded,later);
+        tick();
+        assertTrue(m.diagnostic.contains("t_session_after_seek="));
+        assertTrue(m.diagnostic.contains("Δ="));
+        assertTrue(m.diagnostic.contains("seek_lag="));
+        assertTrue(m.diagnostic.contains("Уточнить по звуку:"));
+        assertTrue(m.seekLagMs>=0);
+    }
 }

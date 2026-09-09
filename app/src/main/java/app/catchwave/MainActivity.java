@@ -67,12 +67,12 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(60));bp.topMargin=dp(18);body.addView(start,bp);
         LinearLayout mode=new LinearLayout(this);mode.setOrientation(LinearLayout.VERTICAL);mode.setPadding(dp(16),dp(10),dp(16),dp(14));mode.setBackground(shape(PANEL,18));
         live=new Switch(this);live.setText("Live Sync");live.setTextColor(TEXT);live.setTextSize(17);live.setPadding(0,dp(6),0,dp(6));
-        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.");});mode.addView(live);
-        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
+        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше сам");});mode.addView(live);
+        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше сам",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
         open=button("Открыть YouTube Music",PANEL,TEXT);open.setOnClickListener(v->openTrack());add(body,open,10);
         reject=button("Это другая версия",PANEL,MUTED);reject.setOnClickListener(v->startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT)));add(body,reject,8);
         setup=text("",12,MUTED);setup.setGravity(Gravity.CENTER);setup.setPadding(0,dp(8),0,0);setup.setOnClickListener(v->permissionsInfo());add(body,setup,8);
-        TextView footer=text("CatchWave 0.1.8 · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
+        TextView footer=text(AppIdentity.label()+" · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
     }
     private android.content.SharedPreferences getPreferences(){return getSharedPreferences("settings",MODE_PRIVATE);}
     private void begin(){
@@ -122,7 +122,7 @@ public final class MainActivity extends Activity {
         reject.setVisibility(current==null?View.GONE:View.VISIBLE);
         if(current!=null){
             track.setText(current.title+"\n"+current.artist);
-            delta.setText(model.errorMs==Long.MAX_VALUE?"Ожидаю позицию плеера":String.format(Locale.ROOT,"Разница таймкодов плеера: %+.0f мс\nЭто не измерение акустической задержки.",(double)model.errorMs));
+            delta.setText(model.errorMs==Long.MAX_VALUE?"Ожидаю позицию плеера":String.format(Locale.ROOT,"Δ таймкодов плеера: %+.0f мс%s\nЭто не измерение акустической задержки. 3×≤120 мс — согласованность распознавателя.",(double)model.errorMs,model.seekLagMs==Long.MIN_VALUE?"":String.format(Locale.ROOT," · seek_lag %d мс",model.seekLagMs)));
             if(Double.isFinite(model.audioLagMs))delta.setText(String.format(Locale.ROOT,"Внутренний звук к микрофону: %+.1f мс\nЗадержка динамика не измерена.",model.audioLagMs));
         }
         setup.setText((checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED?"●":"○")+" Микрофон    "+(MediaBridge.allowed(this)?"●":"○")+" Плеер\n"+MediaBridge.outputLabel(this));
@@ -218,7 +218,7 @@ public final class MainActivity extends Activity {
     private void diagnostics(){
         android.media.session.MediaController c=new MediaBridge(this).controller();
         android.media.session.PlaybackState p=c==null?null:c.getPlaybackState();
-        String report="CatchWave 0.1.8\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
+        String report=AppIdentity.label()+"\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
             +"\nYouTube Music: "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
             +"\nПеремотка: "+MediaBridge.supports(c,android.media.session.PlaybackState.ACTION_SEEK_TO)
             +"\n"+MediaBridge.outputLabel(this)+"\nСостояние плеера: "+(p==null?"—":p.getState())
@@ -227,15 +227,30 @@ public final class MainActivity extends Activity {
             .setNeutralButton("Поделиться",(d,w)->startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,report),"Поделиться диагностикой"))).show();
     }
     private void about(){
-        new AlertDialog.Builder(this).setTitle("Подхват / CatchWave 0.1")
+        new AlertDialog.Builder(this).setTitle("Подхват / "+AppIdentity.label())
             .setMessage("Экспериментальное приложение для YouTube Music. Распознавание: Java-адаптация открытого алгоритма SongRec / Audile, неофициальный интерфейс Shazam. Запуск: нативная медиасессия YouTube Music; резерв — публичный веб-поиск YouTube Music.\n\nЗаписи не сохраняются, аналитики и рекламы нет. Shazam получает отпечаток; YouTube Music — название и исполнителя. Каждый сервис видит IP-адрес запроса.\n\nСинхронизация подтверждается таймкодом плеера; микросекундная точность не гарантируется. Разные издания, реклама и ограничения аккаунта могут мешать подхвату. Live Sync распознаёт фрагменты примерно раз в 3 секунды; на шуме пауза может определяться дольше.\n\nИсходники распространяются с APK под GPL-3.0-or-later.")
             .setPositiveButton("Закрыть",null).setNeutralButton("GPL",(d,w)->license()).show();
+    }
+    static int licenseStart(String license){
+        if(license==null)return 0;
+        int terms=license.indexOf("TERMS AND CONDITIONS");
+        return Math.max(0,terms);
     }
     private void license(){
         try(InputStream in=getResources().openRawResource(R.raw.license);ByteArrayOutputStream out=new ByteArrayOutputStream()){
             byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1)out.write(b,0,n);
-            TextView text=text(out.toString("UTF-8"),12,TEXT);text.setPadding(dp(16),dp(16),dp(16),dp(16));ScrollView scroll=new ScrollView(this);scroll.addView(text);
+            String license=out.toString("UTF-8");
+            TextView text=text(license,12,TEXT);text.setPadding(dp(16),dp(16),dp(16),dp(16));text.setFocusable(false);
+            ScrollView scroll=new ScrollView(this);scroll.addView(text);
             new AlertDialog.Builder(this).setTitle("GNU GPL v3").setView(scroll).setPositiveButton("Закрыть",null).show();
+            int start=licenseStart(license);
+            scroll.post(()->{
+                scroll.scrollTo(0,0);
+                if(text.getLayout()!=null&&start>0){
+                    int line=text.getLayout().getLineForOffset(start);
+                    scroll.scrollTo(0,text.getLayout().getLineTop(line));
+                }
+            });
         }catch(IOException ignored){}
     }
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){

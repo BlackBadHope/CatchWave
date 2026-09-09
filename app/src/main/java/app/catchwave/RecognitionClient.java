@@ -285,7 +285,7 @@ public final class RecognitionClient {
             boolean catalog="music.youtube.com".equals(target.getHost());
             connection.setConnectTimeout(Math.min(catalog?2500:4000,budget.remainingMillis()));
             connection.setReadTimeout(Math.min(catalog?3500:8000,budget.remainingMillis()));
-            connection.setRequestProperty("User-Agent","CatchWave/0.1.5 (Android; music recognition)");
+            connection.setRequestProperty("User-Agent",AppIdentity.userAgent());
             connection.setRequestProperty("Accept",body==null?"text/html,application/json":"application/json");
             if(catalog) {
                 connection.setRequestProperty("Origin","https://music.youtube.com");

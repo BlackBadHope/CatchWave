@@ -46,6 +46,8 @@ public final class SyncService extends Service {
     private long started,lastMatch,lastSeek,acquireStarted,nativeDeadline,lastLaunchRequest;
     private volatile long lastLoud;
     private int seekAttempts,matchCount;
+    private long learnedSeekLag=-1,seekSentAt,seekCommanded,seekEstAtSend;
+    private boolean awaitingSeekSettle;
     private boolean pausedByUs,initialSeek,resolveRequested,playRequested,resumeFresh;
     private Thread microphone;
     private AudioManager audioManager;
@@ -75,7 +77,7 @@ public final class SyncService extends Service {
             if(active)userControl(intent.getAction());else stopSelf();return START_NOT_STICKY;
         }
         if(STOP.equals(intent.getAction())) {finish("Сеанс остановлен","Управление музыкой снова у тебя.");return START_NOT_STICKY;}
-        if(ADJUST.equals(intent.getAction())) {seekAttempts=0;lastSeek=0;initialSeek=false;return START_NOT_STICKY;}
+        if(ADJUST.equals(intent.getAction())) {seekAttempts=0;lastSeek=0;initialSeek=false;awaitingSeekSettle=false;return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         boolean live=intent.getBooleanExtra("live",false);
         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED||!MediaBridge.allowed(this)) {
@@ -114,10 +116,10 @@ public final class SyncService extends Service {
         cancelRequests();requests=new RequestScope();
         model.compatibleLaunchRequested=false;model.launchTicket++;compatibleOpening=false;
         if(capturePause!=null)capturePause.release();
-        model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.progress=0;
+        model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.tEstMs=model.tSessionAfterSeekMs=model.seekLagMs=Long.MIN_VALUE;model.progress=0;
         captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";
         sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;pausedByUs=false;
-        sourceTimeline.reset();shortCapturePreferred=false;
+        sourceTimeline.reset();shortCapturePreferred=false;learnedSeekLag=-1;awaitingSeekSettle=false;seekSentAt=seekCommanded=seekEstAtSend=0;
         capturePause=new CapturePause(bridge.controller());
         model.record("Свежий замер #"+captureGeneration+"; пауза OnePlus запрошена="+capturePause.requested());
         model.update("Подготовка микрофона",capturePause.requested()?"Ставлю YouTube Music на паузу, чтобы слышать источник.":"Готовлю новый замер источника…");
@@ -220,7 +222,7 @@ public final class SyncService extends Service {
         if(model.manualHold){model.update("Ручное управление","Пауза или перемотка приостановили синхронизацию. Нажмите «Синхронизировать» для продолжения.");return;}
         resumeFresh=false;
         if(changed){
-            acquireStarted=now;seekAttempts=0;lastSeek=0;initialSeek=false;pausedByUs=false;playRequested=false;resolveRequested=false;nativeDeadline=0;model.aligned=false;model.errorMs=Long.MAX_VALUE;catalogProblem="";sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;
+            acquireStarted=now;seekAttempts=0;lastSeek=0;initialSeek=false;awaitingSeekSettle=false;pausedByUs=false;playRequested=false;resolveRequested=false;nativeDeadline=0;model.aligned=false;model.errorMs=Long.MAX_VALUE;catalogProblem="";sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;
             boolean remotelyRequested=false;
             if(capturePause!=null)capturePause.release();
             lastLaunchRequest=SystemClock.elapsedRealtime();
@@ -246,7 +248,7 @@ public final class SyncService extends Service {
         if(!sourceResumeReady||now-lastLoud>1400||!MediaBridge.isTrack(player,model.track)||state==null||state.getState()!=PlaybackState.STATE_PAUSED)return;
         if(pauseRequestedAt>0&&state.getLastPositionUpdateTime()<pauseRequestedAt)return;
         if(!MediaBridge.supports(player,PlaybackState.ACTION_PLAY)){finish("Плеер не разрешает возобновление","Повтори подхват после запуска музыки.");return;}
-        acquireStarted=lastLaunchRequest=now;playRequested=true;initialSeek=false;lastSeek=0;seekAttempts=0;
+        acquireStarted=lastLaunchRequest=now;playRequested=true;initialSeek=false;awaitingSeekSettle=false;lastSeek=0;seekAttempts=0;
         pausedByUs=false;sourceResumeReady=false;pauseRequestedAt=sourceLostAt=0;model.aligned=false;
         player.getTransportControls().play();model.record("Возобновление источника: новый срок ожидания плеера");
         model.update("Возобновляю музыку","Жду подтверждения воспроизведения, затем уточню позицию.");
@@ -355,26 +357,54 @@ public final class SyncService extends Service {
         }
         if(!Float.isFinite(p.getPlaybackSpeed())||Math.abs(p.getPlaybackSpeed()-1f)>0.005f){finish("Плеер меняет скорость","Для синхронизации нужна обычная скорость воспроизведения 1×.");return;}
         long adjustment=getSharedPreferences("settings",MODE_PRIVATE).getInt("adjustment",0);
-        long target=t.positionAt(now,adjustment);
+        long tEst=t.positionAt(now,adjustment);
         MediaMetadata meta=c.getMetadata();long duration=meta==null?0:meta.getLong(MediaMetadata.METADATA_KEY_DURATION);
-        if(duration>0&&target>=duration-500){finish("Фрагмент за пределами записи","Версии песни могут отличаться. Попробуйте снова на следующем фрагменте.");return;}
-        long current=SyncMath.playerPosition(p.getPosition(),p.getLastPositionUpdateTime(),p.getPlaybackSpeed(),now,true);
-        if(initialSeek&&current<0){timeoutAcquire(now);return;}
-        long delta=current<0?Long.MAX_VALUE:target-current;model.errorMs=delta;
-        if(!initialSeek||SyncMath.shouldSeek(delta,now-lastSeek,seekAttempts)){
-            c.getTransportControls().seekTo(target);initialSeek=true;model.aligned=false;lastSeek=now;seekAttempts++;
-            model.record("Перемотка #"+seekAttempts+": "+target+" мс; плеер="+current+" мс; now="+now+" updated="+p.getLastPositionUpdateTime()+" raw="+p.getPosition()+" speed="+p.getPlaybackSpeed());
-            model.update("Выравниваю позицию","Жду подтверждения таймкода от YouTube Music.");return;
-        }
-        if(now-lastSeek<500)return;
-        if(Math.abs(delta)<=SyncMath.TOLERANCE_MS&&p.getLastPositionUpdateTime()>=lastSeek){
-            model.aligned=true;model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за согласованностью замеров и скоростью источника.":"Позиция проверена несколькими замерами. YouTube Music подтвердил таймкод.");
-            if(endGuard==null){
-                endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
-                model.record("Контроль конца выбранной записи включён");
-                if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. В конце записи остановлю очередь YouTube Music. Задержка звука не измерена.");}
+        if(duration>0&&tEst>=duration-500){finish("Фрагмент за пределами записи","Версии песни могут отличаться. Попробуйте снова на следующем фрагменте.");return;}
+        long tSession=SyncMath.playerPosition(p.getPosition(),p.getLastPositionUpdateTime(),p.getPlaybackSpeed(),now,true);
+        if(initialSeek&&tSession<0){timeoutAcquire(now);return;}
+        long delta=tSession<0?Long.MAX_VALUE:SeekClock.delta(tEst,tSession);model.errorMs=delta;
+        if(awaitingSeekSettle){
+            if(!SeekClock.settled(now,seekSentAt,p.getLastPositionUpdateTime(),tSession,seekCommanded)){
+                if(now-seekSentAt>5000)finish("Не удалось подтвердить синхронизацию","MediaSession не подтвердил перемотку. Запусти повторный подхват или проверь версию записи.");
+                return;
             }
-        }else if(now-lastSeek>5000&&(seekAttempts>=3||Math.abs(delta)<=SyncMath.TOLERANCE_MS)){finish("Не удалось подтвердить синхронизацию","Плеер не подтвердил нужный таймкод. Запустите повторный подхват или проверьте версию записи.");}
+            long lag=SeekClock.lag(seekSentAt,p.getLastPositionUpdateTime());
+            learnedSeekLag=SeekClock.blend(learnedSeekLag,lag);
+            awaitingSeekSettle=false;
+            model.tEstMs=tEst;model.tSessionAfterSeekMs=tSession;model.seekLagMs=lag;
+            model.record("t_est="+tEst+" t_est_at_send="+seekEstAtSend+" t_session_after_seek="+tSession+" Δ="+delta+" seek_lag="+lag+" learned_lag="+learnedSeekLag);
+            model.record("Уточнить по звуку: "+(model.live?"в Live не запускается":"доступно после подхвата, если Android даст захват"));
+            if(Math.abs(delta)<=SyncMath.TOLERANCE_MS){confirmAligned(c,t);return;}
+            if(seekAttempts<3){issueSeek(c,tEst,tSession,now,duration);return;}
+            finish("Не удалось подтвердить синхронизацию","После компенсации seek_lag плеер всё ещё расходится с оценкой. Это не измерение динамика; при обычном подхвате нажми «Уточнить по звуку».");return;
+        }
+        if(!initialSeek||SyncMath.shouldSeek(delta,now-lastSeek,seekAttempts)){
+            issueSeek(c,tEst,tSession,now,duration);return;
+        }
+        if(now-lastSeek<SeekClock.SETTLE_MS)return;
+        if(Math.abs(delta)<=SyncMath.TOLERANCE_MS&&p.getLastPositionUpdateTime()>=lastSeek)confirmAligned(c,t);
+        else if(now-lastSeek>5000&&(seekAttempts>=3||Math.abs(delta)<=SyncMath.TOLERANCE_MS))finish("Не удалось подтвердить синхронизацию","Плеер не подтвердил нужный таймкод. Запустите повторный подхват или проверьте версию записи.");
+        model.notifyChanged();
+    }
+    private void issueSeek(MediaController c,long tEst,long tSession,long now,long duration){
+        long commanded=SeekClock.command(tEst,learnedSeekLag);
+        if(duration>0&&commanded>=duration-500)commanded=tEst;
+        c.getTransportControls().seekTo(commanded);
+        initialSeek=true;model.aligned=false;lastSeek=now;seekAttempts++;
+        seekSentAt=now;seekCommanded=commanded;seekEstAtSend=tEst;awaitingSeekSettle=true;
+        model.tEstMs=tEst;model.tSessionAfterSeekMs=tSession;
+        PlaybackState state=c.getPlaybackState();
+        model.record("Перемотка #"+seekAttempts+": t_est="+tEst+" commanded="+commanded+" seek_lag_comp="+(learnedSeekLag<0?0:learnedSeekLag)+" t_session="+tSession+" updated="+(state==null?"?":state.getLastPositionUpdateTime()));
+        model.update("Выравниваю позицию","Жду settle MediaSession. 3×≤120 мс — согласованность распознавателя, не слышимый sync.");
+    }
+    private void confirmAligned(MediaController c,Track t){
+        model.aligned=true;
+        model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за согласованностью замеров и скоростью источника.":"Позиция проверена несколькими замерами (3×≤120 мс — согласованность распознавателя, не слышимый sync). YouTube Music подтвердил таймкод.");
+        if(endGuard==null){
+            endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
+            model.record("Контроль конца выбранной записи включён");
+            if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. Дальше плеер сам. Слышимый сдвиг — «Уточнить по звуку», если Android даст захват. Задержка динамика здесь не измерена.");}
+        }
         model.notifyChanged();
     }
     private static boolean isPlayerError(MediaController c){PlaybackState p=c==null?null:c.getPlaybackState();return p!=null&&p.getState()==PlaybackState.STATE_ERROR;}
