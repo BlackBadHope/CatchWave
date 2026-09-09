@@ -29,10 +29,17 @@ final class SourceTimeline {
     private static long bias(Track track){return track.offsetMs-track.anchorMs;}
     Result offer(Track sample){
         // Repeated/overlapping audio cannot count as independent corroboration.
-        if(!sample.hasPosition()||sample.sampleDurationMs<3000||sample.anchorMs<0||
+        if(!sample.hasOffset()||sample.sampleDurationMs<3000||sample.anchorMs<0||
             sample.anchorMs<=lastAnchor||lastEnd!=Long.MIN_VALUE&&sample.anchorMs<lastEnd-20)
             return new Result(State.IGNORED,null,0,0,0,Double.NaN);
         if(!key.equals(sample.key)){history.clear();confirmedBias=null;key=sample.key;}
+        else if(!history.isEmpty()){
+            Track prev=history.get(history.size()-1);
+            long elapsed=sample.anchorMs-prev.anchorMs;
+            if(elapsed>0&&Math.abs(sample.offsetMs-(prev.offsetMs+elapsed))>2000){
+                history.clear();confirmedBias=null;
+            }
+        }
         lastAnchor=sample.anchorMs;lastEnd=sample.anchorMs+sample.sampleDurationMs;
         history.removeIf(t->sample.anchorMs-t.anchorMs>MAX_AGE_MS);
         history.add(sample);if(history.size()>16)history.remove(0);

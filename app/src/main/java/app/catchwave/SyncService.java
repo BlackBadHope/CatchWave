@@ -162,6 +162,11 @@ public final class SyncService extends Service {
                 long interval=SyncMath.recognitionInterval(model.track!=null);
                 if(window>0 && (!shortCapturePreferred||samples-lastSubmittedSamples>=window) && now-lastSubmitted>=interval && rms>0.001 && requesting.compareAndSet(false,true)){
                     short[] sample=new short[window];for(int i=0;i<window;i++)sample[i]=ring[(index-window+ring.length+i)%ring.length];
+                    if(!SyncMath.stableFragment(sample)){
+                        requesting.set(false);lastSubmitted=now;lastSubmittedSamples=samples;
+                        model.record("Фрагмент "+window/16+" мс отклонён: громкость по окну неровная, жду следующий срез");
+                        continue;
+                    }
                     long anchor=now-window/16;
                     AudioTimestamp timestamp=new AudioTimestamp();
                     int timestampResult=local.getTimestamp(timestamp,AudioTimestamp.TIMEBASE_BOOTTIME);
@@ -187,8 +192,10 @@ public final class SyncService extends Service {
             long requestAt=SystemClock.elapsedRealtime();
             Track match=client.recognize(sample,anchor,scope);
             if(!active||generation!=captureGeneration)return;
-            if(match==null||!match.hasPosition()&&sample.length<96000){shortCapturePreferred=false;model.record("Фрагмент без пригодного таймкода; обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update("Слушаю чуть дольше","Уточняю запись и её позицию по 6 секундам звука.");});return;}
-            shortCapturePreferred=match.hasPosition();
+            if(match==null||!match.hasOffset()&&sample.length<96000){shortCapturePreferred=false;model.record("Фрагмент без offset; обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update("Слушаю чуть дольше","Уточняю запись и её позицию по 6 секундам звука.");});return;}
+            if(!match.hasOffset()){shortCapturePreferred=false;model.record("6 с без offset, жду следующий независимый срез; обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");return;}
+            if(Math.abs(match.timeSkew)>=0.005){shortCapturePreferred=false;model.record("Каталог timeskew="+match.timeSkew+" на этом срезе; offset="+match.offsetMs+" оставляю для шкалы, следующий фрагмент длиннее");}
+            shortCapturePreferred=match.hasOffset()&&Math.abs(match.timeSkew)<0.005;
             model.record("Распознано "+match.title+" / "+match.artist+"; offset="+match.offsetMs+" мс, skew="+match.timeSkew+" обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");
             if(model.track!=null&&model.track.key.equals(match.key)){match.youtubeUrl=model.track.youtubeUrl;match.playbackTitle=model.track.playbackTitle;match.playbackArtist=model.track.playbackArtist;}
             else match.youtubeUrl=client.cached(match);
@@ -203,7 +210,7 @@ public final class SyncService extends Service {
         if(model.live&&pausedByUs&&(match.anchorMs<sourceLostAt||now-lastLoud>1400)){
             model.record("Старый фрагмент после паузы источника пропущен");return;
         }
-        if(!match.hasPosition()){model.track=match;finish("Запись распознана, таймкод ненадёжен","Фрагмент совпал с другой скоростью или версией. Повтори подхват на другом моменте; эту позицию не применяю.");return;}
+        if(!match.hasOffset()){model.record("Фрагмент без offset пропущен, захват продолжается");return;}
         if(waitingNextSource&&model.track!=null&&model.track.key.equals(match.key)&&match.positionAt(now,0)>=endedSourcePosition-2000){model.record("Завершённая запись не разрешает следующий трек очереди");return;}
         SourceTimeline.Result confirmation=sourceTimeline.offer(match);
         model.record("Проверка источника: "+confirmation.state+" n="+confirmation.count+" spread="+confirmation.spreadMs+" мс span="+confirmation.spanMs+" мс rate="+confirmation.rate);

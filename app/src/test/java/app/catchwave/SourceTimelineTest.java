@@ -77,6 +77,22 @@ public class SourceTimelineTest {
         for(int i=0;i<16;i++)result=clock.offer(sample(i*3000,i==7?500:(i%3-1)*40));
         assertEquals(SourceTimeline.State.CONFIRMED,result.state);assertEquals(1,result.rate,.002);
     }
+    @Test public void loopWrapStartsANewClockInsteadOfMixingCycles(){
+        SourceTimeline clock=new SourceTimeline();
+        clock.offer(sample(0,0));clock.offer(sample(3000,0));
+        assertEquals(SourceTimeline.State.CONFIRMED,clock.offer(sample(6000,0)).state);
+        var wrap=clock.offer(sample(9000,-9000));
+        assertEquals(SourceTimeline.State.WAITING,wrap.state);assertEquals(1,wrap.count);
+        clock.offer(sample(12000,-9000));
+        var again=clock.offer(sample(15000,-9000));
+        assertEquals(SourceTimeline.State.CONFIRMED,again.state);assertEquals(16000,again.track.offsetMs);
+    }
+    @Test public void loopingExcerptDoesNotInventRateMismatch(){
+        SourceTimeline clock=new SourceTimeline();SourceTimeline.Result result=null;
+        for(int i=0;i<24;i++)result=clock.offer(sample(i*3000,-(i/4)*12000));
+        assertNotEquals(SourceTimeline.State.RATE_MISMATCH,result.state);
+        assertEquals(SourceTimeline.State.CONFIRMED,result.state);
+    }
     @Test public void confirmationPreservesCatalogIdentityAndUsesNewAnchor(){
         SourceTimeline clock=new SourceTimeline();clock.offer(sample(0,0));clock.offer(sample(3000,0));Track last=sample(6000,0);
         last.youtubeUrl="https://music.youtube.com/watch?v=ccccccccccc";last.playbackTitle="Catalog title";

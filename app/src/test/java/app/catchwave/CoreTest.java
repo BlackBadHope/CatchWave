@@ -32,7 +32,14 @@ public class CoreTest {
     @Test public void recognitionTimeAndLaunchTimeAreIncluded(){Track t=new Track("1","Song","Artist","",83400,10000,0);assertEquals(88600,t.positionAt(15200,0));assertEquals(88800,t.positionAt(15200,200));}
     @Test public void sourceBeginningCannotSeekBeforeZero(){Track t=new Track("1","Song","Artist","",-1000,10000,0);assertEquals(0,t.positionAt(10200,0));}
     @Test public void metadataMustMatchArtistAndRecordingVersion(){Track t=new Track("1","Hello","Adele","",1,0,0);assertTrue(t.matches("Hello (Official Audio)","Adele - Topic"));assertFalse(t.matches("Hello","Lionel Richie"));assertFalse(t.matches("Hello (Live)","Adele"));assertFalse(t.matches("Hello (Slowed)","Adele"));assertFalse(t.matches("",""));}
-    @Test public void unknownOffsetAndSpeedChangesAreNotSynchronizable(){Track unknown=new Track("1","x","y","",Long.MIN_VALUE,0,0);assertFalse(unknown.hasPosition());assertFalse(new Track("1","x","y","",1000,0,.1).hasPosition());}
+    @Test public void unknownOffsetAndSpeedChangesAreNotSynchronizable(){Track unknown=new Track("1","x","y","",Long.MIN_VALUE,0,0);assertFalse(unknown.hasPosition());assertFalse(unknown.hasOffset());assertTrue(new Track("1","x","y","",1000,0,.1).hasOffset());assertTrue(new Track("1","x","y","",1000,0,.1).hasPosition());}
+    @Test public void quietThirdOfWindowIsNotAStableFragment(){
+        short[] loud=new short[48000];for(int i=0;i<loud.length;i++)loud[i]=(short)(8000*Math.sin(2*Math.PI*440*i/16000));
+        assertTrue(SyncMath.stableFragment(loud));
+        short[] spliced=loud.clone();for(int i=0;i<16000;i++)spliced[i]=0;
+        assertFalse(SyncMath.stableFragment(spliced));
+        assertFalse(SyncMath.stableFragment(new short[47999]));
+    }
     @Test public void playerClockAccountsForTimestampAndRate(){assertEquals(7000,SyncMath.playerPosition(3000,1000,1,5000,true));assertEquals(3000,SyncMath.playerPosition(3000,1000,1,5000,false));assertEquals(5000,SyncMath.playerPosition(3000,1000,.5f,5000,true));assertEquals(-1,SyncMath.playerPosition(-1,1000,1,5000,true));}
     @Test public void correctionsAreBoundedAndHaveDeadband(){assertFalse(SyncMath.shouldSeek(120,6000,1));assertFalse(SyncMath.shouldSeek(900,1000,1));assertFalse(SyncMath.shouldSeek(900,6000,3));assertTrue(SyncMath.shouldSeek(-900,6000,1));}
     @Test public void responseCarriesOffsetAndCatalogId() throws Exception {Track t=RecognitionClient.parse(new JSONObject("{\"matches\":[{\"offset\":83.25}],\"track\":{\"key\":\"123\",\"title\":\"Hello\",\"subtitle\":\"Adele\",\"hub\":{\"actions\":[{\"id\":\"123456\"}]}}}"),9000);assertNotNull(t);assertEquals(83250,t.offsetMs);assertEquals("123456",t.appleId);assertEquals(9000,t.anchorMs);}
