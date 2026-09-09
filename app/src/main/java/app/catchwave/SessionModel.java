@@ -7,7 +7,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class SessionModel {
     public static final SessionModel INSTANCE=new SessionModel();
     public volatile String status="Музыка рядом. Продолжи у себя.",detail="Нажми кнопку рядом с источником музыки.",diagnostic="";
-    public volatile boolean running,live,aligned,needsOpen,manualHold;
+    public volatile boolean running,live,aligned,needsOpen,manualHold,guardingTrack;
+    public volatile boolean measuringAudio,audioVerified;
+    public volatile double audioLagMs=Double.NaN;
     public volatile int progress;
     public volatile double level;
     public volatile long errorMs=Long.MAX_VALUE;
@@ -24,7 +26,7 @@ public final class SessionModel {
     }
     public String report(){
         Track t=track;
-        return "CatchWave 0.1.5\nrunning="+running+" live="+live+" aligned="+aligned+" manualHold="+manualHold+"\n"+status+"\n"+detail
+        return "CatchWave 0.1.8\nrunning="+running+" live="+live+" aligned="+aligned+" manualHold="+manualHold+" guardingTrack="+guardingTrack+" measuringAudio="+measuringAudio+" audioLagMs="+audioLagMs+" audioVerified="+audioVerified+"\n"+status+"\n"+detail
             +(t==null?"":"\nТрек: "+t.title+" / "+t.artist+"\nКаталог: "+t.playbackTitle+" / "+t.playbackArtist+"\nСсылка: "+t.youtubeUrl+"\noffsetMs="+t.offsetMs+" anchorMs="+t.anchorMs+" sampleMs="+t.sampleDurationMs+" skew="+t.timeSkew)
             +"\nРазница таймкодов, мс: "+(errorMs==Long.MAX_VALUE?"не измерена":Long.toString(errorMs))+"\n"+diagnostic;
     }

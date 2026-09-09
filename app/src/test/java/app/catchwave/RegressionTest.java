@@ -45,7 +45,7 @@ public class RegressionTest {
         try{
             pausedPlayer(c,now);set(s,"bridge",new MediaBridge(s){public MediaController controller(){return c;}});set(s,"active",true);set(s,"pausedByUs",true);set(s,"acquireStarted",now-20001);set(s,"lastLoud",now);
             m.running=true;m.live=true;m.aligned=true;Track old=new Track("1","Song","Artist","",10000,now-6000,0);old.sampleDurationMs=3000;m.track=old;
-            Track fresh=new Track("1","Song","Artist","",13000,now-3000,0);fresh.sampleDurationMs=3000;invoke(s,"accept",fresh);tick(s);
+            for(int i=0;i<3;i++){Track fresh=new Track("1","Song","Artist","",7000+i*3000,now-9000+i*3000,0);fresh.sampleDurationMs=3000;invoke(s,"accept",fresh);}tick(s);
             assertTrue("Async play acknowledgement must not inherit an expired acquisition deadline",m.running);
         }finally{life.destroy();player.release();}
     }

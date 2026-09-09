@@ -32,7 +32,11 @@ public final class SyncService extends Service {
     private long quietStarted;
     private int lastPlayerState=PlaybackState.STATE_NONE;
     private String playerError="";
-    private Track pendingTimeline;
+    private final SourceTimeline sourceTimeline=new SourceTimeline();
+    private volatile boolean shortCapturePreferred;
+    private TrackEndGuard endGuard;
+    private boolean waitingNextSource;
+    private long endedSourcePosition;
     private boolean compatibleOpening;
     private boolean sourceResumeReady;
     private long sourceLostAt,pauseRequestedAt,captureStarted;
@@ -103,6 +107,9 @@ public final class SyncService extends Service {
         pending=resolverTask;if(pending!=null)pending.cancel(true);
     }
     private void freshCapture(){
+        stopService(new Intent(this,AudioCalibrationService.class));model.audioLagMs=Double.NaN;model.audioVerified=false;
+        closeEndGuard();waitingNextSource=false;
+        startForeground(NOTIFICATION,notification("Слушаю источник…"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
         captureGeneration++;captureDone=true;resumeFresh=true;
         cancelRequests();requests=new RequestScope();
         model.compatibleLaunchRequested=false;model.launchTicket++;compatibleOpening=false;
@@ -110,7 +117,7 @@ public final class SyncService extends Service {
         model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;model.progress=0;
         captureStarted=lastLoud=quietStarted=SystemClock.elapsedRealtime();lastMatch=0;lastPlayerState=PlaybackState.STATE_NONE;playerError="";catalogProblem="";
         sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;pausedByUs=false;
-        pendingTimeline=null;
+        sourceTimeline.reset();shortCapturePreferred=false;
         capturePause=new CapturePause(bridge.controller());
         model.record("Свежий замер #"+captureGeneration+"; пауза OnePlus запрошена="+capturePause.requested());
         model.update("Подготовка микрофона",capturePause.requested()?"Ставлю YouTube Music на паузу, чтобы слышать источник.":"Готовлю новый замер источника…");
@@ -137,7 +144,7 @@ public final class SyncService extends Service {
             recorder=local;if(local.getState()!=AudioRecord.STATE_INITIALIZED)throw new IllegalStateException("Микрофон недоступен");
             // Prefer the phone microphone even when output is a Bluetooth headset.
             for(AudioDeviceInfo device:audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) if(device.getType()==AudioDeviceInfo.TYPE_BUILTIN_MIC){local.setPreferredDevice(device);break;}
-            local.startRecording();short[] ring=new short[96000],buffer=new short[1600];int index=0;long samples=0,lastSubmitted=0,lastUi=0;
+            local.startRecording();short[] ring=new short[96000],buffer=new short[1600];int index=0;long samples=0,lastSubmitted=0,lastSubmittedSamples=0,lastUi=0;
             while(active&&!captureDone&&!model.manualHold&&generation==captureGeneration){
                 int n=local.read(buffer,0,buffer.length,AudioRecord.READ_BLOCKING);
                 if(n<0)throw new IllegalStateException("Микрофон прерван ("+n+")");if(n==0)continue;
@@ -147,9 +154,9 @@ public final class SyncService extends Service {
                 if(rms>0.0025)lastLoud=now;
                 if(now-lastUi>250){model.progress=(int)Math.min(100,samples*100/48000);model.notifyChanged();lastUi=now;}
                 if(model.live&&model.track!=null&&now-lastLoud>1400)main.post(this::onSilence);
-                int window=SyncMath.captureWindow(samples,lastSubmitted==0||model.live&&model.track!=null);
+                int window=SyncMath.captureWindow(samples,lastSubmitted==0||shortCapturePreferred);
                 long interval=SyncMath.recognitionInterval(model.track!=null);
-                if(window>0 && now-lastSubmitted>=interval && rms>0.001 && requesting.compareAndSet(false,true)){
+                if(window>0 && (!shortCapturePreferred||samples-lastSubmittedSamples>=window) && now-lastSubmitted>=interval && rms>0.001 && requesting.compareAndSet(false,true)){
                     short[] sample=new short[window];for(int i=0;i<window;i++)sample[i]=ring[(index-window+ring.length+i)%ring.length];
                     long anchor=now-window/16;
                     AudioTimestamp timestamp=new AudioTimestamp();
@@ -161,11 +168,11 @@ public final class SyncService extends Service {
                     AudioDeviceInfo route=local.getRoutedDevice();
                     model.record("Микрофон: timestamp="+timestampResult+" frame="+timestamp.framePosition+" samples="+samples+" anchor="+anchor+" endAge="+endAge+" мс; route="+(route==null?"?":route.getType())+" rms="+Math.round(rms*10000));
                     if(timestampResult!=AudioRecord.SUCCESS||endAge < -100||endAge>1000){requesting.set(false);main.post(()->{if(generation==captureGeneration)finish("Нет точной отметки микрофона","Android не вернул достоверное время записи. Повтори подхват.");});break;}
-                    final long sampleAnchor=anchor;lastSubmitted=now;
+                    final long sampleAnchor=anchor;lastSubmitted=now;lastSubmittedSamples=samples;
                     model.record("Распознавание: отправлен фрагмент "+window/16+" мс");
                     recognitionTask=network.submit(()->{try{recognize(sample,sampleAnchor,generation,scope);}finally{requesting.set(false);}});
                 }
-                if(!model.live&&model.track==null&&now-captureStarted>35000){main.post(()->{if(active&&generation==captureGeneration)finish("Не получилось распознать","Поднесите телефон ближе к музыке и попробуйте снова.");});break;}
+                if(model.track==null&&now-captureStarted>35000){main.post(()->{if(active&&generation==captureGeneration)finish(sourceTimeline.hasSamples()?"Позиция источника нестабильна":"Не получилось распознать",sourceTimeline.hasSamples()?"За 35 секунд не получены три согласованных замера. Проверь непрерывное воспроизведение и версию записи, затем повтори.":"Поднесите телефон ближе к музыке и попробуйте снова.");});break;}
             }
         }catch(Exception e){if(active&&!captureDone&&generation==captureGeneration)main.post(()->{if(generation==captureGeneration)finish("Запись остановлена",e.getMessage()==null?"Микрофон недоступен":e.getMessage());});}
         finally {if(local!=null){try{local.stop();}catch(Exception ignored){}local.release();}recorder=null;}
@@ -176,29 +183,38 @@ public final class SyncService extends Service {
             long requestAt=SystemClock.elapsedRealtime();
             Track match=client.recognize(sample,anchor,scope);
             if(!active||generation!=captureGeneration)return;
-            if(match==null||!match.hasPosition()&&sample.length<96000){model.record("Короткий фрагмент без пригодного таймкода; обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update("Слушаю чуть дольше","Уточняю запись и её позицию по 6 секундам звука.");});return;}
+            if(match==null||!match.hasPosition()&&sample.length<96000){shortCapturePreferred=false;model.record("Фрагмент без пригодного таймкода; обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update("Слушаю чуть дольше","Уточняю запись и её позицию по 6 секундам звука.");});return;}
+            shortCapturePreferred=match.hasPosition();
             model.record("Распознано "+match.title+" / "+match.artist+"; offset="+match.offsetMs+" мс, skew="+match.timeSkew+" обработка="+(SystemClock.elapsedRealtime()-requestAt)+" мс");
             if(model.track!=null&&model.track.key.equals(match.key)){match.youtubeUrl=model.track.youtubeUrl;match.playbackTitle=model.track.playbackTitle;match.playbackArtist=model.track.playbackArtist;}
             else match.youtubeUrl=client.cached(match);
-            main.post(()->{if(generation==captureGeneration){if(!model.live)captureDone=true;accept(match);}});
+            main.post(()->{if(generation==captureGeneration)accept(match);});
         }catch(Exception e){if(scope.isCancelled())return;main.post(()->{if(active&&generation==captureGeneration&&!model.manualHold){pauseOwned();finish("Распознавание недоступно",e.getMessage()==null?"Проверьте интернет и попробуйте снова.":e.getMessage());}});}
     }
     private void accept(Track match){
         if(!active||model.manualHold)return;
         long now=SystemClock.elapsedRealtime();
+        if(lastLoud>0&&now-lastLoud>1400){if(model.live)onSilence();sourceTimeline.reset();model.update("Источник затих","Жду непрерывного воспроизведения для новых замеров.");return;}
         // A delayed match from before the source went quiet cannot authorize resume.
         if(model.live&&pausedByUs&&(match.anchorMs<sourceLostAt||now-lastLoud>1400)){
             model.record("Старый фрагмент после паузы источника пропущен");return;
         }
         if(!match.hasPosition()){model.track=match;finish("Запись распознана, таймкод ненадёжен","Фрагмент совпал с другой скоростью или версией. Повтори подхват на другом моменте; эту позицию не применяю.");return;}
-        if(model.live&&!resumeFresh&&model.track!=null&&model.track.key.equals(match.key)&&Math.abs(SyncMath.timelineDifference(match,model.track))>250){
-            if(pendingTimeline==null||!pendingTimeline.key.equals(match.key)||Math.abs(SyncMath.timelineDifference(match,pendingTimeline))>150){
-                pendingTimeline=match;model.record("Скачок таймкода "+SyncMath.timelineDifference(match,model.track)+" мс: жду второй замер");return;
+        if(waitingNextSource&&model.track!=null&&model.track.key.equals(match.key)&&match.positionAt(now,0)>=endedSourcePosition-2000){model.record("Завершённая запись не разрешает следующий трек очереди");return;}
+        SourceTimeline.Result confirmation=sourceTimeline.offer(match);
+        model.record("Проверка источника: "+confirmation.state+" n="+confirmation.count+" spread="+confirmation.spreadMs+" мс span="+confirmation.spanMs+" мс rate="+confirmation.rate);
+        if(confirmation.state==SourceTimeline.State.IGNORED)return;
+        if(confirmation.state==SourceTimeline.State.RATE_MISMATCH){pauseOwned();finish("Скорость источника отличается","Несколько замеров показывают нарастающее расхождение времени. Проверь скорость 1× и версию записи; постоянная поправка это не исправит.");return;}
+        if(confirmation.state!=SourceTimeline.State.CONFIRMED){
+            if(model.live&&model.track!=null&&!model.track.key.equals(match.key)){
+                pauseOwned();model.compatibleLaunchRequested=false;model.needsOpen=false;model.launchTicket++;
             }
-            model.record("Скачок таймкода подтверждён вторым замером");
+            model.update("Проверяю позицию · "+confirmation.count+"/3",match.title+" — сравниваю разные фрагменты и ход времени источника.");return;
         }
-        pendingTimeline=null;
-        boolean changed=resumeFresh||model.track==null||!model.track.key.equals(match.key);
+        match=confirmation.track;
+        if(!model.live)captureDone=true;
+        boolean changed=resumeFresh||waitingNextSource||model.track==null||!model.track.key.equals(match.key);
+        if(changed||waitingNextSource){closeEndGuard();waitingNextSource=false;}
         if(changed&&!model.manualHold&&model.live&&model.track!=null)pauseOwned();
         model.track=match;lastMatch=match.anchorMs+match.sampleDurationMs;matchCount++;
         if(model.manualHold){model.update("Ручное управление","Пауза или перемотка приостановили синхронизацию. Нажмите «Синхронизировать» для продолжения.");return;}
@@ -246,6 +262,7 @@ public final class SyncService extends Service {
             final String resolved=result.url;
             main.post(()->{
                 if(!active||generation!=captureGeneration||model.manualHold||model.track==null||!model.track.key.equals(match.key))return;
+                if(sourceTimeline.hasSamples()&&!sourceTimeline.isTracking(match.key))return;
                 if(result.kind==RecognitionClient.Kind.CANCELLED)return;
                 // A slow lookup must not restart a track already opened by the native player.
                 if(MediaBridge.isTrack(bridge.controller(),model.track)&&!isPlayerError(bridge.controller())||initialSeek||model.aligned)return;
@@ -272,6 +289,7 @@ public final class SyncService extends Service {
     private void onSilence(){
         if(active&&!model.manualHold&&!resumeFresh&&model.live&&SystemClock.elapsedRealtime()-lastLoud>1400&&!pausedByUs&&model.aligned){
             sourceLostAt=SystemClock.elapsedRealtime();sourceResumeReady=false;
+            sourceTimeline.reset();
             pauseOwned();model.update("Источник затих","Плеер поставлен на паузу. Жду нового уверенного совпадения.");notifyStatus("Источник затих · ожидание");
         }
     }
@@ -291,7 +309,22 @@ public final class SyncService extends Service {
         if(now-started>30*60*1000){pauseOwned();finish("Сеанс завершён","Лимит одного сеанса Live Sync — 30 минут. Можно запустить снова.");return;}
         if(model.manualHold||resumeFresh)return;
         Track t=model.track;if(t==null)return;
-        if(model.live&&now-lastMatch>16000&&!pausedByUs&&model.aligned){sourceLostAt=now;sourceResumeReady=false;pauseOwned();model.update("Источник потерян","Музыка на паузе. Продолжаю искать подтверждённое совпадение.");}
+        if(endGuard!=null){
+            TrackEndGuard.State boundary=endGuard.check(now);
+            if(boundary==TrackEndGuard.State.FAILED){model.aligned=false;finish("Не удалось подтвердить паузу в конце трека","Проверь состояние YouTube Music. Приложение не подтвердило остановку очереди.");return;}
+            if(boundary==TrackEndGuard.State.STOPPED){
+                closeEndGuard();model.aligned=false;model.record("Конец записи: пауза YouTube Music подтверждена");
+                if(!model.live){finish("Трек завершён — музыка на паузе","Следующий трек очереди не запускаю. Для новой песни нажми «Подхватить».");return;}
+                waitingNextSource=true;endedSourcePosition=t.positionAt(now,0);sourceTimeline.reset();
+                sourceLostAt=now;sourceResumeReady=false;pausedByUs=true;pauseRequestedAt=0;
+                model.update("Жду следующий трек источника","Очередь YouTube Music приостановлена. Подтверждаю следующую песню микрофоном.");return;
+            }
+            if(boundary==TrackEndGuard.State.PAUSING){model.update("Останавливаю очередь плеера","Жду подтверждения паузы YouTube Music.");return;}
+            if(!model.live)return;
+        }
+        if(waitingNextSource)return;
+        if(model.live&&now-lastMatch>16000&&!pausedByUs&&model.aligned){sourceLostAt=now;sourceResumeReady=false;sourceTimeline.reset();pauseOwned();model.update("Источник потерян","Музыка на паузе. Продолжаю искать подтверждённое совпадение.");}
+        if(model.live&&sourceTimeline.hasSamples()&&!sourceTimeline.isTracking(t.key)){if(!pausedByUs)pauseOwned();return;}
         MediaController c=bridge.controller();
         PlaybackState p=c==null?null:c.getPlaybackState();
         if(p!=null&&p.getState()!=lastPlayerState){lastPlayerState=p.getState();MediaMetadata m=c.getMetadata();model.record("YTM state="+p.getState()+" pos="+p.getPosition()+" updated="+p.getLastPositionUpdateTime()+" speed="+p.getPlaybackSpeed()+" metadata="+(m==null?"?":m.getDescription()));}
@@ -335,14 +368,19 @@ public final class SyncService extends Service {
         }
         if(now-lastSeek<500)return;
         if(Math.abs(delta)<=SyncMath.TOLERANCE_MS&&p.getLastPositionUpdateTime()>=lastSeek){
-            model.aligned=true;model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за источником. Совпадение конкретной версии записи не подтверждено.":"YouTube Music подтвердил таймкод. Проверь совпадение записи на слух.");
-            if(!model.live)finish("Таймкод установлен","Проверь звук на слух. Кавер или монтаж может распознаться как оригинал; совпадение таймкодов не доказывает совпадение записи.");
+            model.aligned=true;model.update(model.live?"Live Sync активен":"Таймкод установлен",model.live?"Слежу за согласованностью замеров и скоростью источника.":"Позиция проверена несколькими замерами. YouTube Music подтвердил таймкод.");
+            if(endGuard==null){
+                endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
+                model.record("Контроль конца выбранной записи включён");
+                if(!model.live){cancelRequests();model.level=0;model.guardingTrack=true;startForeground(NOTIFICATION,notification("В конце этой записи поставлю музыку на паузу"),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);model.update("Таймкод установлен · один трек","Микрофон выключен. В конце записи остановлю очередь YouTube Music. Задержка звука не измерена.");}
+            }
         }else if(now-lastSeek>5000&&(seekAttempts>=3||Math.abs(delta)<=SyncMath.TOLERANCE_MS)){finish("Не удалось подтвердить синхронизацию","Плеер не подтвердил нужный таймкод. Запустите повторный подхват или проверьте версию записи.");}
         model.notifyChanged();
     }
     private static boolean isPlayerError(MediaController c){PlaybackState p=c==null?null:c.getPlaybackState();return p!=null&&p.getState()==PlaybackState.STATE_ERROR;}
     private void timeoutAcquire(long now){if(now-acquireStarted>20000)finish("Не удалось открыть совпавшую запись",playerError.isEmpty()?"Распознаватель и YouTube Music могут выбрать разные версии. Проверь найденную песню, открой нужную запись и повтори подхват.":"YouTube Music: "+playerError+" Открой запись вручную и повтори подхват.");}
     private void userControl(String action){
+        closeEndGuard();waitingNextSource=false;
         if(USER_RESUME.equals(action)){
             freshCapture();
         }else {
@@ -357,6 +395,8 @@ public final class SyncService extends Service {
         model.record("Управление: "+action.substring(action.lastIndexOf('.')+1));
     }
     private void finish(String title,String detail){
+        stopService(new Intent(this,AudioCalibrationService.class));
+        closeEndGuard();
         cancelRequests();
         if(capturePause!=null&&capturePause.restore(bridge.controller()))model.record("Возвращено прежнее воспроизведение после неудачного замера");
         model.record(title+"; ошибка таймкода="+model.errorMs+" мс");
@@ -365,6 +405,8 @@ public final class SyncService extends Service {
         main.removeCallbacks(tick);main.removeCallbacks(routeCheck);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }
     @Override public void onDestroy(){
+        stopService(new Intent(this,AudioCalibrationService.class));
+        closeEndGuard();
         cancelRequests();
         if(capturePause!=null)capturePause.restore(bridge.controller());
         active=false;captureDone=true;model.running=false;main.removeCallbacksAndMessages(null);
@@ -374,6 +416,7 @@ public final class SyncService extends Service {
         model.notifyChanged();super.onDestroy();
     }
     @Override public void onTaskRemoved(Intent rootIntent){finish("Сеанс остановлен","Приложение закрыто.");}
+    private void closeEndGuard(){model.guardingTrack=false;if(endGuard!=null){endGuard.close();endGuard=null;}}
     @Override public IBinder onBind(Intent intent){return null;}
     @Override protected void dump(java.io.FileDescriptor fd,java.io.PrintWriter writer,String[] args){writer.println(model.report());}
 }

@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.PlaybackState;
+import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.*;
 import android.provider.Settings;
@@ -23,7 +24,7 @@ public final class MainActivity extends Activity {
     private final SessionModel model=SessionModel.INSTANCE;
     private final Runnable listener=this::render;
     private TextView status,detail,track,delta,setup,modeNote;
-    private Button start,open,reject;
+    private Button start,open,reject,calibrate,sync;
     private Switch live;
     private WaveView wave;
     private ProgressBar progress;
@@ -61,16 +62,17 @@ public final class MainActivity extends Activity {
         track=text("",16,TEXT);track.setPadding(dp(16),dp(14),dp(16),dp(14));track.setBackground(shape(PANEL,16));add(body,track,18);
         delta=text("",12,MUTED);delta.setGravity(Gravity.CENTER);add(body,delta,6);
         buildPlayer(body);
-        start=button("Подхватить",ACCENT,BG);start.setTextSize(18);start.setTypeface(null,Typeface.BOLD);start.setOnClickListener(v->{if(model.running)stop();else begin();});
+        calibrate=button("Уточнить по звуку",PANEL,ACCENT);calibrate.setOnClickListener(v->calibrateAudio());add(body,calibrate,12);
+        start=button("Подхватить",ACCENT,BG);start.setTextSize(18);start.setTypeface(null,Typeface.BOLD);start.setOnClickListener(v->{if(model.measuringAudio)stopService(new Intent(this,AudioCalibrationService.class));else if(model.running)stop();else begin();});
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(60));bp.topMargin=dp(18);body.addView(start,bp);
         LinearLayout mode=new LinearLayout(this);mode.setOrientation(LinearLayout.VERTICAL);mode.setPadding(dp(16),dp(10),dp(16),dp(14));mode.setBackground(shape(PANEL,18));
         live=new Switch(this);live.setText("Live Sync");live.setTextColor(TEXT);live.setTextSize(17);live.setPadding(0,dp(6),0,dp(6));
-        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше слушаешь независимо.");});mode.addView(live);
-        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше слушаешь независимо.",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
+        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.");});mode.addView(live);
+        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
         open=button("Открыть YouTube Music",PANEL,TEXT);open.setOnClickListener(v->openTrack());add(body,open,10);
         reject=button("Это другая версия",PANEL,MUTED);reject.setOnClickListener(v->startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT)));add(body,reject,8);
         setup=text("",12,MUTED);setup.setGravity(Gravity.CENTER);setup.setPadding(0,dp(8),0,0);setup.setOnClickListener(v->permissionsInfo());add(body,setup,8);
-        TextView footer=text("CatchWave 0.1.5 · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
+        TextView footer=text("CatchWave 0.1.8 · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
     }
     private android.content.SharedPreferences getPreferences(){return getSharedPreferences("settings",MODE_PRIVATE);}
     private void begin(){
@@ -110,8 +112,10 @@ public final class MainActivity extends Activity {
     }
     private void render(){
         if(status==null||isFinishing())return;
-        status.setText(model.status);detail.setText(model.detail);start.setText(model.running?"Остановить сеанс":"Подхватить");live.setEnabled(!model.running);
-        if(model.running)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        status.setText(model.status);detail.setText(model.detail);start.setText(model.measuringAudio?"Отменить уточнение":model.running?"Остановить сеанс":"Подхватить");live.setEnabled(!model.running);
+        calibrate.setVisibility(model.guardingTrack&&!model.live?View.VISIBLE:View.GONE);calibrate.setEnabled(!model.measuringAudio);
+        sync.setEnabled(!model.measuringAudio);open.setEnabled(!model.measuringAudio);reject.setEnabled(!model.measuringAudio);
+        if(model.measuringAudio||model.running&&!model.guardingTrack)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         progress.setVisibility(model.running&&model.track==null?View.VISIBLE:View.INVISIBLE);progress.setProgress(model.progress);
         wave.level=model.level;wave.listening=model.running;wave.aligned=model.aligned;wave.invalidate();
         Track current=model.track;track.setVisibility(current==null?View.GONE:View.VISIBLE);delta.setVisibility(current==null?View.GONE:View.VISIBLE);open.setVisibility(current==null?View.GONE:View.VISIBLE);
@@ -119,6 +123,7 @@ public final class MainActivity extends Activity {
         if(current!=null){
             track.setText(current.title+"\n"+current.artist);
             delta.setText(model.errorMs==Long.MAX_VALUE?"Ожидаю позицию плеера":String.format(Locale.ROOT,"Разница таймкодов плеера: %+.0f мс\nЭто не измерение акустической задержки.",(double)model.errorMs));
+            if(Double.isFinite(model.audioLagMs))delta.setText(String.format(Locale.ROOT,"Внутренний звук к микрофону: %+.1f мс\nЗадержка динамика не измерена.",model.audioLagMs));
         }
         setup.setText((checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED?"●":"○")+" Микрофон    "+(MediaBridge.allowed(this)?"●":"○")+" Плеер\n"+MediaBridge.outputLabel(this));
         renderPlayer();
@@ -141,7 +146,7 @@ public final class MainActivity extends Activity {
         });add(playerPanel,timeline,4);
         LinearLayout buttons=row();playPause=button("▶",ACCENT,BG);playPause.setContentDescription("Воспроизведение или пауза");playPause.setOnClickListener(v->togglePlayback());
         buttons.addView(playPause,new LinearLayout.LayoutParams(dp(70),dp(46)));
-        Button sync=button("Синхронизировать",PANEL,ACCENT);sync.setTextSize(14);sync.setOnClickListener(v->{if(model.running)startService(new Intent(this,SyncService.class).setAction(SyncService.USER_RESUME));else begin();});
+        sync=button("Синхронизировать",PANEL,ACCENT);sync.setTextSize(14);sync.setOnClickListener(v->{if(model.running)startService(new Intent(this,SyncService.class).setAction(SyncService.USER_RESUME));else begin();});
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(46),1);sp.leftMargin=dp(8);buttons.addView(sync,sp);add(playerPanel,buttons,4);
         playerFailure=text("",13,TEXT);add(playerPanel,playerFailure,8);
         retryPlayer=button("Повторить подхват",PANEL,ACCENT);retryPlayer.setOnClickListener(v->{if(model.running)startService(new Intent(this,SyncService.class).setAction(SyncService.USER_RESUME));else begin();});add(playerPanel,retryPlayer,6);
@@ -153,6 +158,23 @@ public final class MainActivity extends Activity {
         if(model.running){if(playing)model.manualHold=true;startService(new Intent(this,SyncService.class).setAction(playing?SyncService.USER_PAUSE:SyncService.USER_RESUME));}
         else if(playing&&MediaBridge.supports(c,PlaybackState.ACTION_PAUSE))c.getTransportControls().pause();
         else if(!playing&&MediaBridge.supports(c,PlaybackState.ACTION_PLAY))c.getTransportControls().play();
+    }
+    private void calibrateAudio(){
+        MediaController c=new MediaBridge(this).controller();
+        if(model.measuringAudio||!new CalibrationTarget(c,model.track).valid(c,model)){
+            model.update("Сначала подхвати песню","Уточнение доступно, пока выбранная запись играет в режиме одного трека.");return;
+        }
+        model.update("Разреши сравнение звука","Android запросит захват. Приложение использует только внутренний звук YouTube Music и микрофон; изображения не записывает.");
+        MediaProjectionManager manager=getSystemService(MediaProjectionManager.class);
+        Intent request=Build.VERSION.SDK_INT>=34?manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()):manager.createScreenCaptureIntent();
+        startActivityForResult(request,42);
+    }
+    @Override protected void onActivityResult(int code,int result,Intent data){
+        super.onActivityResult(code,result,data);
+        if(code!=42)return;
+        if(result!=RESULT_OK||data==null){model.update("Уточнение отменено","Разрешение на внутренний звук не получено. Обычный подхват продолжает работать.");return;}
+        try{startForegroundService(new Intent(this,AudioCalibrationService.class).setAction(AudioCalibrationService.START).putExtra("result",result).putExtra("consent",data));}
+        catch(RuntimeException failure){model.update("Не удалось начать уточнение","Открой «Подхват» и повтори разрешение на захват звука.");}
     }
     private void renderPlayer(){
         renderPlayer(new MediaBridge(this).controller());
@@ -168,8 +190,8 @@ public final class MainActivity extends Activity {
         playerClock.setText((failed?"Воспроизведение недоступно":timeLabel(position)+" / "+timeLabel(duration))+(model.manualHold?" · ручное управление":"")+(p.getState()==PlaybackState.STATE_BUFFERING||p.getState()==PlaybackState.STATE_CONNECTING?" · загрузка":""));
         playerFailure.setVisibility(failed?View.VISIBLE:View.GONE);retryPlayer.setVisibility(failed?View.VISIBLE:View.GONE);
         if(failed)playerFailure.setText("YouTube Music: "+(p.getErrorMessage()==null?"не удалось запустить запись":p.getErrorMessage())+"\nПовтори подхват. Если запись недоступна, выбери другую версию в плеере.");
-        playPause.setText(playing?"❚❚":"▶");playPause.setContentDescription(playing?"Пауза":"Воспроизведение");playPause.setEnabled(!failed&&MediaBridge.supports(c,playing?PlaybackState.ACTION_PAUSE:PlaybackState.ACTION_PLAY));
-        timeline.setEnabled(!failed&&duration>0&&MediaBridge.supports(c,PlaybackState.ACTION_SEEK_TO));
+        playPause.setText(playing?"❚❚":"▶");playPause.setContentDescription(playing?"Пауза":"Воспроизведение");playPause.setEnabled(!model.measuringAudio&&!failed&&MediaBridge.supports(c,playing?PlaybackState.ACTION_PAUSE:PlaybackState.ACTION_PLAY));
+        timeline.setEnabled(!model.measuringAudio&&!failed&&duration>0&&MediaBridge.supports(c,PlaybackState.ACTION_SEEK_TO));
         if(!dragging)timeline.setProgress(duration<=0?0:(int)Math.min(1000,Math.max(0,position)*1000/duration));
     }
     private static String timeLabel(long ms){if(ms<0)return "—";long seconds=ms/1000;return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60);}
@@ -196,7 +218,7 @@ public final class MainActivity extends Activity {
     private void diagnostics(){
         android.media.session.MediaController c=new MediaBridge(this).controller();
         android.media.session.PlaybackState p=c==null?null:c.getPlaybackState();
-        String report="CatchWave 0.1.5\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
+        String report="CatchWave 0.1.8\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
             +"\nYouTube Music: "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
             +"\nПеремотка: "+MediaBridge.supports(c,android.media.session.PlaybackState.ACTION_SEEK_TO)
             +"\n"+MediaBridge.outputLabel(this)+"\nСостояние плеера: "+(p==null?"—":p.getState())

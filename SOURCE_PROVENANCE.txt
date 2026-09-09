@@ -1,5 +1,5 @@
 Project: CatchWave / Podhvat
-Initial adaptation: 0.1.0; retained by the 0.1.5 release
+Initial adaptation: 0.1.0; retained by the 0.1.8 release
 License: GPL-3.0-or-later
 Date: 2026-09-08
 
