@@ -7,6 +7,8 @@
         <item name="android:statusBarColor">#101510</item>
         <item name="android:navigationBarColor">#101510</item>
         <item name="android:windowBackground">#101510</item>
+        <item name="android:windowSplashScreenBackground">#101510</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#101510</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>

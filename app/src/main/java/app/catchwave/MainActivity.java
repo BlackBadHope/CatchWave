@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
     private Switch live;
     private WaveView wave;
     private ProgressBar progress;
-    private boolean pendingStart;
+    private boolean pendingStart,refinePrompted;
     private LinearLayout playerPanel;
     private TextView playerTitle,playerClock;
     private TextView playerFailure;
@@ -67,19 +67,19 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(60));bp.topMargin=dp(18);body.addView(start,bp);
         LinearLayout mode=new LinearLayout(this);mode.setOrientation(LinearLayout.VERTICAL);mode.setPadding(dp(16),dp(10),dp(16),dp(14));mode.setBackground(shape(PANEL,18));
         live=new Switch(this);live.setText("Live Sync");live.setTextColor(TEXT);live.setTextSize(17);live.setPadding(0,dp(6),0,dp(6));
-        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.");});mode.addView(live);
-        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один трек — в конце музыка встанет на паузу.",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
+        live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше сам");});mode.addView(live);
+        modeNote=text(live.isChecked()?"Следить за паузой и сменой песни. Нужны наушники.":"Один подхват — дальше сам",13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
         open=button("Открыть YouTube Music",PANEL,TEXT);open.setOnClickListener(v->openTrack());add(body,open,10);
         reject=button("Это другая версия",PANEL,MUTED);reject.setOnClickListener(v->startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT)));add(body,reject,8);
         setup=text("",12,MUTED);setup.setGravity(Gravity.CENTER);setup.setPadding(0,dp(8),0,0);setup.setOnClickListener(v->permissionsInfo());add(body,setup,8);
-        TextView footer=text("CatchWave 0.1.8 · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
+        TextView footer=text(AppIdentity.label()+" · экспериментальная версия",11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
     }
     private android.content.SharedPreferences getPreferences(){return getSharedPreferences("settings",MODE_PRIVATE);}
     private void begin(){
         pendingStart=true;
         if(!getPreferences().getBoolean("intro",false)){
             new AlertDialog.Builder(this).setTitle("Как работает подхват")
-                .setMessage("Телефон записывает короткий фрагмент и создаёт звуковой отпечаток. Отпечаток отправляется Shazam для распознавания; название и исполнитель — YouTube Music для поиска. После распознавания приложение запрашивает запуск через медиасессию YouTube Music. Сама запись остаётся в оперативной памяти телефона и не сохраняется.\n\nДля перемотки нужен доступ к медиасессии через разрешение «Доступ к уведомлениям». Содержимое уведомлений приложение не читает.\n\nLive Sync пока работает только с наушниками. Интерфейсы распознавания и поиска ссылок могут быть временно недоступны.")
+                .setMessage(RecognitionPath.explanation()+"\n\nСама запись остаётся в оперативной памяти и не сохраняется. Рекламного идентификатора, аналитики и встроенной рекламы нет.\n\nДля перемотки нужен доступ к медиасессии через разрешение «Доступ к уведомлениям». Содержимое уведомлений приложение не читает.\n\nLive Sync пока работает только с наушниками.")
                 .setPositiveButton("Продолжить",(d,w)->{getPreferences().edit().putBoolean("intro",true).apply();begin();})
                 .setNegativeButton("Позже",(d,w)->pendingStart=false).show();return;
         }
@@ -122,13 +122,20 @@ public final class MainActivity extends Activity {
         reject.setVisibility(current==null?View.GONE:View.VISIBLE);
         if(current!=null){
             track.setText(current.title+"\n"+current.artist);
-            delta.setText(model.errorMs==Long.MAX_VALUE?"Ожидаю позицию плеера":String.format(Locale.ROOT,"Разница таймкодов плеера: %+.0f мс\nЭто не измерение акустической задержки.",(double)model.errorMs));
+            delta.setText(model.errorMs==Long.MAX_VALUE?"Ожидаю позицию плеера":String.format(Locale.ROOT,"Δ таймкодов плеера: %+.0f мс%s\nЭто не измерение акустической задержки. 3×≤120 мс — согласованность распознавателя.",(double)model.errorMs,model.seekLagMs==Long.MIN_VALUE?"":String.format(Locale.ROOT," · seek_lag %d мс",model.seekLagMs)));
             if(Double.isFinite(model.audioLagMs))delta.setText(String.format(Locale.ROOT,"Внутренний звук к микрофону: %+.1f мс\nЗадержка динамика не измерена.",model.audioLagMs));
         }
         setup.setText((checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED?"●":"○")+" Микрофон    "+(MediaBridge.allowed(this)?"●":"○")+" Плеер\n"+MediaBridge.outputLabel(this));
         renderPlayer();
         if(model.manualHold){model.compatibleLaunchRequested=false;playerLaunch.cancel();}
         if(visible&&model.running&&!model.manualHold&&model.compatibleLaunchRequested&&getPreferences().getBoolean("compatibleLaunch",false))openTrack();
+        if(!model.running)refinePrompted=false;
+        if(visible&&model.needsAudioRefine&&!model.measuringAudio&&!refinePrompted&&!model.live){
+            MediaController player=new MediaBridge(this).controller();
+            if(new CalibrationTarget(player,model.track).valid(player,model)){
+                refinePrompted=true;model.needsAudioRefine=false;calibrateAudio();
+            }
+        }
     }
     private void buildPlayer(LinearLayout parent){
         playerPanel=new LinearLayout(this);playerPanel.setOrientation(LinearLayout.VERTICAL);playerPanel.setPadding(dp(16),dp(12),dp(16),dp(12));playerPanel.setBackground(shape(PANEL,18));
@@ -210,6 +217,7 @@ public final class MainActivity extends Activity {
         compatible.setOnCheckedChangeListener((b,checked)->getPreferences().edit().putBoolean("compatibleLaunch",checked).apply());add(box,compatible,10);
         add(box,text("Если фоновый запуск не сработал, откроет найденную запись и запросит возврат сюда после установки таймкода. Для запуска из фона понадобится открыть «Подхват».",12,MUTED),4);
         Button app=button("Настройки Android",PANEL,TEXT);app.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));add(box,app,8);
+        Button data=button(Privacy.TITLE,PANEL,TEXT);data.setOnClickListener(v->privacy());add(box,data,8);
         Button diag=button("Диагностика",PANEL,TEXT);diag.setOnClickListener(v->diagnostics());add(box,diag,8);
         Button about=button("О приложении и лицензии",PANEL,TEXT);about.setOnClickListener(v->about());add(box,about,8);
         ScrollView settingsScroll=new ScrollView(this);settingsScroll.addView(box);
@@ -218,8 +226,8 @@ public final class MainActivity extends Activity {
     private void diagnostics(){
         android.media.session.MediaController c=new MediaBridge(this).controller();
         android.media.session.PlaybackState p=c==null?null:c.getPlaybackState();
-        String report="CatchWave 0.1.8\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
-            +"\nYouTube Music: "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
+        String report=AppIdentity.label()+"\nAndroid "+Build.VERSION.RELEASE+" · "+Build.MANUFACTURER+" "+Build.MODEL
+            +"\nРекламный ID: не запрашивается\nАналитика: нет\nПриложение Shazam: не требуется\nYouTube Music (плеер): "+youtubeInstalled()+"\nДоступ к плееру: "+MediaBridge.allowed(this)+"\nМедиасессия: "+(c!=null)
             +"\nПеремотка: "+MediaBridge.supports(c,android.media.session.PlaybackState.ACTION_SEEK_TO)
             +"\n"+MediaBridge.outputLabel(this)+"\nСостояние плеера: "+(p==null?"—":p.getState())
             +"\n"+new MediaBridge(this).diagnosticSnapshot()+"\n"+model.report();
@@ -227,15 +235,33 @@ public final class MainActivity extends Activity {
             .setNeutralButton("Поделиться",(d,w)->startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,report),"Поделиться диагностикой"))).show();
     }
     private void about(){
-        new AlertDialog.Builder(this).setTitle("Подхват / CatchWave 0.1")
-            .setMessage("Экспериментальное приложение для YouTube Music. Распознавание: Java-адаптация открытого алгоритма SongRec / Audile, неофициальный интерфейс Shazam. Запуск: нативная медиасессия YouTube Music; резерв — публичный веб-поиск YouTube Music.\n\nЗаписи не сохраняются, аналитики и рекламы нет. Shazam получает отпечаток; YouTube Music — название и исполнителя. Каждый сервис видит IP-адрес запроса.\n\nСинхронизация подтверждается таймкодом плеера; микросекундная точность не гарантируется. Разные издания, реклама и ограничения аккаунта могут мешать подхвату. Live Sync распознаёт фрагменты примерно раз в 3 секунды; на шуме пауза может определяться дольше.\n\nИсходники распространяются с APK под GPL-3.0-or-later.")
-            .setPositiveButton("Закрыть",null).setNeutralButton("GPL",(d,w)->license()).show();
+        new AlertDialog.Builder(this).setTitle("Подхват / "+AppIdentity.label())
+            .setMessage("Экспериментальный подхват в YouTube Music. Обработка звука — Java-адаптация SongRec / Audile на этом телефоне. Приложение Shazam не требуется. Каталог отпечатков — HTTPS; плеер — нативная медиасессия YouTube Music, резерв — публичный веб-поиск.\n\nЗаписи не сохраняются. Рекламного идентификатора, аналитики и встроенной рекламы нет. Каталог получает отпечаток; YouTube Music — название и исполнителя, если выбран как плеер.\n\nСинхронизация подтверждается таймкодом плеера; микросекундная точность не гарантируется. Разные издания и ограничения аккаунта могут мешать подхвату.\n\nИсходники распространяются с APK под GPL-3.0-or-later.")
+            .setPositiveButton("Закрыть",null).setNeutralButton("GPL",(d,w)->license()).setNegativeButton("Данные",(d,w)->privacy()).show();
+    }
+    private void privacy(){
+        new AlertDialog.Builder(this).setTitle(Privacy.TITLE).setMessage(Privacy.notice()).setPositiveButton("Закрыть",null).show();
+    }
+    static int licenseStart(String license){
+        if(license==null)return 0;
+        int terms=license.indexOf("TERMS AND CONDITIONS");
+        return Math.max(0,terms);
     }
     private void license(){
         try(InputStream in=getResources().openRawResource(R.raw.license);ByteArrayOutputStream out=new ByteArrayOutputStream()){
             byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1)out.write(b,0,n);
-            TextView text=text(out.toString("UTF-8"),12,TEXT);text.setPadding(dp(16),dp(16),dp(16),dp(16));ScrollView scroll=new ScrollView(this);scroll.addView(text);
+            String license=out.toString("UTF-8");
+            TextView text=text(license,12,TEXT);text.setPadding(dp(16),dp(16),dp(16),dp(16));text.setFocusable(false);
+            ScrollView scroll=new ScrollView(this);scroll.addView(text);
             new AlertDialog.Builder(this).setTitle("GNU GPL v3").setView(scroll).setPositiveButton("Закрыть",null).show();
+            int start=licenseStart(license);
+            scroll.post(()->{
+                scroll.scrollTo(0,0);
+                if(text.getLayout()!=null&&start>0){
+                    int line=text.getLayout().getLineForOffset(start);
+                    scroll.scrollTo(0,text.getLayout().getLineTop(line));
+                }
+            });
         }catch(IOException ignored){}
     }
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){

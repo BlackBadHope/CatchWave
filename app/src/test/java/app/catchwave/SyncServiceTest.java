@@ -33,9 +33,20 @@ public class SyncServiceTest {
         SessionModel.INSTANCE.live=true;SessionModel.INSTANCE.aligned=false;SessionModel.INSTANCE.manualHold=false;SessionModel.INSTANCE.track=new Track("1","Song","Artist","",10000,1000,0);
         acceptSeries(s,new Track("1","Song","Artist","",13000,4000,0));assertEquals(3,get(s,"seekAttempts"));lifecycle.destroy();SessionModel.INSTANCE.track=null;SessionModel.INSTANCE.live=false;
     }
-    @Test public void unreliableOffsetNeverLaunchesPlayer() throws Exception {
+    @Test public void noisyCatalogSkewKeepsCapturingWithoutLaunching() throws Exception {
         var lifecycle=Robolectric.buildService(SyncService.class).create();SyncService s=lifecycle.get();NativeBridge b=new NativeBridge(s);set(s,"bridge",b);set(s,"active",true);
-        accept(s,new Track("bad","Song","Artist","",10000,1000,.03));assertEquals(0,b.requests);assertFalse(SessionModel.INSTANCE.running);assertEquals("Запись распознана, таймкод ненадёжен",SessionModel.INSTANCE.status);lifecycle.destroy();SessionModel.INSTANCE.track=null;
+        SessionModel.INSTANCE.running=true;
+        accept(s,new Track("bad","Song","Artist","",10000,1000,.03));
+        assertEquals(0,b.requests);assertTrue(SessionModel.INSTANCE.running);
+        assertNotEquals("Запись распознана, таймкод ненадёжен",SessionModel.INSTANCE.status);
+        lifecycle.destroy();SessionModel.INSTANCE.track=null;SessionModel.INSTANCE.running=false;
+    }
+    @Test public void missingOffsetDoesNotAbortCapture() throws Exception {
+        var lifecycle=Robolectric.buildService(SyncService.class).create();SyncService s=lifecycle.get();NativeBridge b=new NativeBridge(s);set(s,"bridge",b);set(s,"active",true);
+        SessionModel.INSTANCE.running=true;
+        accept(s,new Track("bad","Song","Artist","",Long.MIN_VALUE,1000,0));
+        assertEquals(0,b.requests);assertTrue(SessionModel.INSTANCE.running);assertNull(SessionModel.INSTANCE.track);
+        lifecycle.destroy();SessionModel.INSTANCE.running=false;
     }
     @Test public void oneShotResyncDiscardsOldMatchAndInvalidatesOutstandingGeneration() throws Exception {
         var lifecycle=Robolectric.buildService(SyncService.class).create();SyncService s=lifecycle.get();NativeBridge b=new NativeBridge(s);set(s,"bridge",b);set(s,"active",true);set(s,"captureGeneration",4);
