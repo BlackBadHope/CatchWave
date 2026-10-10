@@ -1,0 +1,20 @@
+[
+  {
+    "file": "ZXing-Android-Embedded-v4.3.0.zip",
+    "url": "https://codeload.github.com/journeyapps/zxing-android-embedded/zip/refs/tags/v4.3.0",
+    "sha256": "21c5c905d794a123f4b010116c1ca647b5074e6a1a1a98645ed90ef1d9fb4aac",
+    "bytes": 292971
+  },
+  {
+    "file": "ZXing-Core-3.5.3-sources.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3-sources.jar",
+    "sha256": "f983454400d73652ad5236413ba7eba48072e042982a84b10e1468506f4b28ae",
+    "bytes": 507643
+  },
+  {
+    "file": "QRCoder-v1.6.0.zip",
+    "url": "https://codeload.github.com/Shane32/QRCoder/zip/refs/tags/v1.6.0",
+    "sha256": "e4c116ff13615e9d689936276f9b33277ab829037a8604288c47c4e2cf5e425e",
+    "bytes": 388823
+  }
+]

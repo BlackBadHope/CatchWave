@@ -1,45 +1,16 @@
-# Известные проблемы и план
+# Known limitations
 
-Оставшиеся ограничения версии 0.1.8.
+CatchWave is experimental. A single OnePlus 12 manual pilot accepted LAN audio/gestures, including held volume in Android 25. Broader reliability, latency, quality and screen-off battery behavior remain unmeasured.
 
-## Подтверждение опорной позиции
-
-В 0.1.6 первый пригодный результат больше не запускает плеер: нужны три согласованных независимых фрагмента. Используется медиана, проверяется продвижение позиции по монотонному времени микрофона. Live Sync дополнительно проверяет постепенное расхождение скорости. Нестабильное первичное подтверждение завершается через 35 секунд записи с объяснением.
-
-Остаётся отдельная оценка фактического звука: несколько одинаково смещённых ответов распознавателя, задержка динамика, разные издания и малое изменение темпа могут пройти короткую проверку. Статус успеха не доказывает акустическое совпадение. Для обычного подхвата микрофон после подтверждения выключается; последующие паузы и перемотки источника требуют нового подхвата. Дополнительная надёжность увеличивает время первого запуска примерно до 9 секунд аудио, не считая сети и плеера.
-
-При проверке 0.1.6 три замера согласовались с разбросом 2 мс, а плеер подтвердил позицию с разницей 59 мс; пользователь всё равно слышал около 300 мс отставания. Это не измерение причины задержки. Автоматическая компенсация фактического звукового выхода ещё не реализована. Для неё нужны сравнение аудиосигналов и проверка после коррекции; одна лишь постоянная поправка к таймкоду не гарантирует результата.
-
-## Остановка очереди
-
-В 0.1.8 исправлено ложное сообщение об ошибке после фактической паузы: YouTube Music может сохранять старое время обновления позиции. Теперь подтверждение требует стабильного состояния PAUSED/STOPPED, той же позиции и media ID в течение 700 мс; продолжающийся запуск очереди не считается успехом.
-
-## Экспериментальное уточнение звука
-
-В 0.1.8 реализован локальный GCC-PHAT по внутреннему звуку YouTube Music и микрофону, с двумя независимыми окнами и повторным измерением после перемотки. Проверены синтетические сигналы и ограничения управления; проверка MediaProjection на OnePlus отложена до следующего сеанса. Нулевая громкость может заглушать также цифровой захват. В этом случае приложение завершает измерение без поправки. Постоянная задержка выхода динамика этим методом не измеряется. Автоматическое уточнение Live Sync ещё не подключено.
-
-В 0.1.7 обычный режим сохраняет службу управления после перемотки и ставит YouTube Music на паузу в конце записи; Live Sync ждёт следующего подтверждённого источником трека. Фоновая служба и доступ к медиасессии должны оставаться доступны. Явная остановка сеанса, ручная перемотка из «Подхвата» и закрытие задачи освобождают автоматическое управление. Это не постоянное изменение настроек автопроигрывания YouTube Music.
-
-Перед концом используется сообщённая плеером длительность и позиция. Если метаданные поздние или неверные, резервная реакция на смену записи может допустить короткий фрагмент следующего трека до подтверждения паузы. Отказ плеера подтвердить паузу показывается как ошибка.
-
-## Транслитерация названий
-
-Названия кириллицей и латиницей могут не сопоставляться, хотя исполнитель совпадает. Сейчас транслитерация применяется только к исполнителю.
-
-Следующий шаг: ограниченная поддержка транслитерации названий с сохранением различий remix/remaster/cover и других версий. Проверка только похожего названия недостаточна.
-
-## Видеоверсии и неоднозначность каталога
-
-Поиск использует песенный фильтр. Запись, доступная в YouTube Music как видео, может не попасть в кандидаты. Простое снятие фильтра не исправит проблему: у общей выдачи другая структура колонок, а канал загрузившего видео может отличаться от музыкального исполнителя.
-
-Следующий шаг: ограниченный резервный поиск видео, раздельный разбор типов результатов и явный выбор версии при неоднозначности. Не включать первый похожий кавер автоматически.
-
-## Медиасессия YouTube Music
-
-Объявленная поддержка фонового поиска или запуска по URI не гарантирует исполнения команды. Плеер может вернуть ERROR. Резерв через экран требует включённой настройки; возврат в CatchWave зависит от поведения Android. Реклама, ограничения аккаунта и недоступные записи могут мешать запуску и перемотке.
-
-## Live Sync и динамик
-
-Live Sync требует наушники: непрерывное воспроизведение через динамик телефона пока не отделено от внешнего источника. Обычный подхват через динамик доступен. Определение ожидаемого системного маршрута не доказывает фактический маршрут отдельного стороннего плеера. На Android 11–12 Live не запускается при неизвестном маршруте.
-
-Распределённые динамики, автоматическая акустическая калибровка, iOS-клиент и микросекундная синхронизация не реализованы.
+- Host capture uses the current default multimedia output. No independent CatchWave endpoint, selector, discovery, route switch, resampling, internet relay or firewall installer exists.
+- AudioRelay parity is not established. Existing virtual output can be captured, but no AudioRelay source/private protocol is included. Tilt controls local Android media volume.
+- WASAPI supports mono/stereo PCM at 44100/48000/96000 Hz. Unsupported formats fail explicitly. Stalls drop stale audio; seamless recovery and end-to-end latency are not guaranteed.
+- With management enabled, ordinary phone handling can trigger commands. An owner pickup caused tilt to reduce volume to silence. Keep management off outside deliberate use/testing; version 25 has no timed intentional arming and is not production-ready.
+- Gestures need neutral/fresh sensors. Held native volume steps repeat at most every 400 ms. Motion/posture/OEM behavior can affect detection. Windows player support determines media-key effects; ACK is not proof of playback transition.
+- Optional screen-off gestures use a foreground service and partial wake lock. Long runs, battery cost and Bluetooth routes need testing. Android power management can stop the process.
+- Host restart invalidates pairing. Scan a new private QR locally. Never publish pairing data/signing keys.
+- The experimental APK uses a local debug signer. Different signers prevent in-place updates. Production signing and a new binary GitHub Release are outside this source update.
+- Recognition uses third-party HTTPS and multiple consistent fragments. Matching metadata can select another master/remix/live version. YouTube availability varies by account/region.
+- Timeline alignment/acoustic refinement remain experimental; millisecond synchronization is not guaranteed. Handoff seeks to estimated position without adding callback lag. Silent/denied capture invalidates acoustic refinement. Live Sync requires headphones/media-session access; queue/metadata gaps can need user intervention.
+- iOS, continuous acoustic Live Sync refinement and automatic version disambiguation are not implemented.
+- Android minSdk30 is a declared installation/API baseline, not evidence for every model. Accel+gyro are required for all gestures; without either gestures are disabled. Missing game rotation vector falls back to rotation vector; absence of both disables tilt while taps/shake remain possible. The current QR pairing needs a camera. Windows ARM64/x86, Linux/macOS Host and other Android models are not physically validated; no Linux/macOS Host or iOS client exists.

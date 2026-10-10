@@ -1,92 +1,82 @@
 # Подхват / CatchWave
 
-Experimental Android app that recognizes nearby music and asks YouTube Music to continue from the estimated current position.
+Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-**Статус: экспериментальная версия 0.1.8.** Приложение распознаёт музыку, подтверждает позицию несколькими замерами и управляет YouTube Music. Точная акустическая синхронизация ещё не обеспечена. Известные проблемы и следующие задачи описаны в [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+Current Android source: **0.1.20-hold-volume, versionCode 25**. The Windows Host in this tree uses the matching authenticated protocol. A OnePlus 12 running Android 16 passed a short owner-operated audio/gesture pilot, including held volume adjustment. This is single-device acceptance; latency, battery life and gesture reliability have not been benchmarked across devices.
 
-## Что умеет
+**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 25 is not production-ready; intentional timed arming is not implemented in this version.
 
-- Записывает короткий фрагмент микрофоном и локально строит звуковой отпечаток.
-- Отправляет отпечаток Shazam, получает название, исполнителя и оценку позиции.
-- Ищет соответствующую запись в YouTube Music, запрашивает запуск и перемотку с учётом прошедшего времени.
-- Показывает управление воспроизведением, паузой и повторным подхватом внутри приложения.
-- Перед новым замером запрашивает паузу местной музыки, чтобы она не мешала микрофону.
-- При отказе фонового запуска может кратко открыть YouTube Music и запросить возврат. Этот резерв включается отдельно в настройках.
-- В Live Sync отслеживает тишину и смену распознанного трека. Для этого режима нужны наушники; распределённые динамики пока не реализованы.
-- После обычного подхвата выключает микрофон и следит за концом выбранной записи: запрашивает паузу перед её окончанием и при переходе очереди на другую запись. Проверяет подтверждение паузы. В Live Sync после этого ждёт подтверждения следующей песни внешнего источника.
+## Windows audio and gesture remote
 
-Первичный подхват требует трёх согласованных замеров разных фрагментов: обычно это около 9 секунд звука, плюс поиск, сеть и реакция плеера. При неудаче короткого распознавания используется 6-секундный фрагмент. На подтверждение отведено не более 35 секунд записи. Мгновенный переход и микросекундная синхронизация не заявляются.
+The portable Windows Host captures the **current default multimedia output** with WASAPI loopback and streams PCM over pinned TLS on a local network. Android plays it through its media output. The Host installs no audio driver, service, autostart entry, certificate trust or firewall rule. A separate CatchWave Windows audio endpoint is not implemented. AudioRelay feature/quality parity has not been established; AudioRelay code, binaries and private protocol are not used.
 
-## Требования
+| Gesture | Action |
+| --- | --- |
+| Tilt left/right and hold | Android media volume down/up; first step after 250 ms, then every 400 ms |
+| Return toward neutral | Stop held volume adjustment |
+| Shake, or 3 taps | Windows play/pause |
+| 4 taps | Windows next |
+| 5 taps | Windows previous |
+| 6 taps | Android media mute/restore |
 
-В 0.1.8 добавлена экспериментальная кнопка **«Уточнить по звуку»** после обычного подхвата. Она запрашивает системное разрешение Android на захват, временно выключает звук телефона и сравнивает внутренний поток YouTube Music с микрофоном. Два независимых трёхсекундных окна должны согласоваться; после поправки выполняется новое измерение. Лимит — 30 секунд и две перемотки. Аудио остаётся в RAM, изображения не захватываются. Смена записи, пауза, отмена или ручное изменение громкости прерывают уточнение. Прежняя громкость возвращается, если пользователь её не изменил.
+Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor samples are required; missed samples do not queue delayed volume steps. Native Android steps determine the increment. Windows keys depend on the active player's supported actions. A command ACK confirms dispatch, not a successful player transition.
 
-Это чекпоинт разработки: реальный захват внутреннего звука при нулевой громкости на OnePlus ещё не проверен. Android или YouTube Music могут его ограничить. Целевой порог алгоритма 15 мс относится к двум захваченным потокам; он не измеряет задержку выключенного динамика и не обещает слышимого совпадения до миллисекунды.
+1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
+2. On a trusted shared LAN, start `CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372`.
+3. Open **«Звук с ПК»** on the phone, scan the locally displayed Host QR, confirm pairing and press **«Подключиться»**. Grant Camera for scanning and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. Restarting the Host requires a new scan.
+4. Allow control explicitly in the Host and on the phone. Fresh audio/output confirmation and both permissions are required for Windows commands and held volume. Turning management off on either side stops held adjustment.
+5. Hold still for 1.5 seconds to set neutral; use **«Обновить нейтраль»** after changing posture. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
+6. Gestures normally require CatchWave to be visible. The optional **«Разрешить жесты при выключенном экране»** setting uses the running foreground service and a partial wake lock. Screen-off behavior and battery cost remain experimental. Use **«Отключиться»** to stop the Android session; close the Host to end its pairing session.
 
-- Android 11 / API 30 или новее. Прототип проверялся на OnePlus 12 с Android 16.
-- Установленный YouTube Music и доступная для воспроизведения запись.
-- Интернет, разрешение микрофона и доступ к медиасессии через системное разрешение «Доступ к уведомлениям».
-- Для Live Sync — наушники и Android 13+ с доступным определением системного маршрута. Bluetooth-тип устройства может обозначать колонку: используйте именно наушники.
+Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
 
-iOS-приложения пока нет. iPhone, компьютер или телевизор могут быть внешним источником музыки.
+See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-LAN-HOLD.md).
 
-## Запуск
+## Music recognition and handoff
 
-1. Установите APK из [Releases](https://github.com/BlackBadHope/CatchWave/releases) либо соберите приложение самостоятельно.
-2. Убедитесь, что YouTube Music самостоятельно воспроизводит нужный контент и позволяет перемотку.
-3. Откройте «Подхват», ознакомьтесь с описанием обработки данных и выдайте необходимые разрешения.
-4. Включите музыку на другом устройстве. Для динамика телефона оставьте Live Sync выключенным и нажмите «Подхватить».
-5. При отказе фонового запуска включите «Разрешить открытие YouTube Music при сбое» либо используйте явную кнопку открытия плеера.
-6. Если выбрана другая версия, нажмите «Это другая версия». Соответствие удалится из кеша; новый подхват сделает свежий замер.
+The original mode records a short microphone fragment, computes a fingerprint locally, sends it to Shazam recognition over HTTPS, and asks native YouTube Music to continue at the estimated position. The Shazam app is not required. Matching metadata does not guarantee the same remix/master/recording. Live Sync requires headphones and access to the YouTube Music media session. Microphone recognition and LAN receiving are separate modes.
 
-Если Android ограничивает выдачу разрешения приложению из APK, следуйте [официальной инструкции Android](https://support.google.com/android/answer/12623953). В случае прерывания фоновой записи проверьте настройки батареи приложения.
+Recognition requires Microphone, internet and YouTube Music. Notification access is used for its media session; message notifications are not read. Optional acoustic refinement asks Android for screen/audio capture consent. Audio buffers remain in RAM. Fingerprints go to Shazam; title/artist searches go to YouTube. Those services see the network address. There is no CatchWave account, backend, advertising ID or analytics. LAN pairing preferences and finite failure/stage values are stored privately on the phone; Windows saves only the owner's control permission boolean. See [known limitations](KNOWN_ISSUES.md).
 
-## Границы синхронизации
+## Compatibility
 
-Показанная разница — разница рассчитанного таймкода и состояния медиасессии, **не измерение задержки звука**. С версии 0.1.6 позиция подтверждается тремя независимыми фрагментами с разбросом приведённых таймкодов не более 120 мс. Применяется медианная оценка; одиночный выброс и повтор того же аудио не подтверждают позицию. Это порог согласованности распознавателя, а не обещанная точность слышимого звука.
+| Platform or feature | Declared baseline | Physical validation |
+| --- | --- | --- |
+| Android | Android 11/API 30 minimum; target SDK 35, compile SDK 36; Java APK with no bundled native ABI libraries | OnePlus 12, Android 16/API 36 |
+| Windows Host | Windows desktop with .NET 9 Windows Desktop runtime; WinForms, WASAPI and user32 are required | Windows 11 x64, build 26200 |
+| Windows ARM64/x86 | No RID/architecture is pinned in the project; needs a matching runtime/apphost build | Not validated |
+| Linux/macOS | Can build Android sources with the SDK; no Host implementation | No audio/remote support implemented |
+| iOS | No client implementation | Not supported |
 
-Live Sync сохраняет до 16 замеров за последнюю минуту и проверяет скорость хода источника по временным отметкам микрофона. При устойчивом расхождении скорости он останавливает синхронизацию с объяснением. Смена песни, подтверждённый скачок позиции и возобновление после тишины требуют новых согласованных замеров. Короткий первичный подхват не способен надёжно определить малое изменение темпа; после остановки микрофона обычный режим не следит за дальнейшими паузами внешнего источника.
+These SDK/OS baselines do not certify other phone models or future Android releases. API 33 notification/typed parcel access, API 34 capture consent and API 31 privacy-sensitive capture calls are guarded; release lint checks the API 30 minimum. Windows support also depends on the runtime's current [official OS matrix](https://github.com/dotnet/core/blob/main/release-notes/9.0/supported-os.md); do not infer support for every Windows 10 edition or Server from the framework's capabilities. The accepted Windows build is x64; ARM64 needs separate testing.
 
-Поиск ограничен песенной выдачей. Названия кириллицей и латинской транслитерацией пока могут не совпадать. Кавер или монтаж может быть распознан как оригинал. Доступность записи зависит от каталога, региона и аккаунта YouTube Music. Подробнее: [известные проблемы](KNOWN_ISSUES.md).
+Audio receiving does not require gesture sensors. Gestures require both an accelerometer and gyroscope; absence or failed registration of either disables all gestures. Tilt prefers game rotation vector and falls back to ordinary rotation vector. With neither, tilt is disabled while taps/shake can still run with fresh accel/gyro samples. A camera is optional for APK installation but required by the current QR-only pairing flow. The manifest requires a microphone because the original recognition mode remains included.
 
-## Данные
+Only the phone's built-in speaker route was used in the audio pilot. Android can route media to headphones/Bluetooth, but latency, fixed-volume behavior and route changes are not certified. OEM battery restrictions can stop background playback/sensors despite a foreground service and optional wake lock. Screen-off mode and sensor thresholds need device-specific checks; no battery whitelist or settings bypass is performed.
 
-Аудио находится в оперативной памяти и не сохраняется приложением на диск. Звуковой отпечаток передаётся Shazam; название и исполнитель используются для поиска в YouTube Music. Сервисы видят сетевой адрес запросов. Используются неофициальные интерфейсы, которые могут измениться.
+## Build and verify
 
-Содержимое уведомлений приложение не читает: разрешение используется для доступа к медиасессии YouTube Music. Нет отдельного аккаунта CatchWave, собственного сервера, рекламы и аналитики. Последние диагностические события хранятся в памяти и не отправляются автоматически. Исходники не содержат ключей, пользовательских записей или выгрузок телефона.
-
-## Сборка и проверки
-
-Нужны JDK 17, Android SDK Platform 36 и Build Tools 36.0.0. Gradle 8.11.1 подключён через wrapper; Android Gradle Plugin — 8.9.1. Runtime-зависимостей приложения нет. JUnit, Robolectric и org.json используются только в тестах.
-
-Создайте локальный `local.properties` с `sdk.dir=...`, либо настройте расположение Android SDK в окружении. Этот файл не включается в Git.
+Android requires JDK 17, SDK Platform 36 and Build Tools 36.0.0. Minimum Android: 11/API 30; compile SDK 36, target SDK 35. Gradle 8.11.1 is pinned by the wrapper; AGP 8.9.1. Set `ANDROID_HOME` or create untracked `local.properties` with `sdk.dir=...`.
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+.\gradlew.bat --no-daemon :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+# Windows helper: validates and copies the APK to ignored dist/.
+.\build.ps1 -Validate
 ```
 
-На Linux/macOS:
+Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release.apk`. This experimental release uses the developer's local Android debug signing key; keys are never committed. Different signers prevent in-place updates. Production signing and a new binary GitHub Release are outside this source update; older Releases can contain older versions.
 
-```sh
-./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+Windows needs Windows 10/11 and .NET 9 SDK/Windows Desktop runtime:
+
+```powershell
+.\windows\build.ps1 -Validate
+.\windows\test-interop.ps1
 ```
 
-APK появляется в `app/build/outputs/apk/release/app-release.apk`. Для Windows также доступен `build.ps1 -Validate`: он направляет промежуточные файлы в Temp и копирует APK в `dist`.
+Test modes use bounded loopback TLS, synthetic silence and fake media keys. They do not capture real audio, control a phone or display a live pairing QR. GitHub Actions runs these Android, Host and Java/.NET checks.
 
-Прототип подписывается локальным Android debug key, включая build type release; release не имеет флага debuggable. Собственная сборка с другим ключом не установится поверх опубликованного APK. Ключи подписи не входят в репозиторий. Для полноценной публикации требуется отдельная конфигурация release signing.
+## License and contributions
 
-Проверки выпусков: [0.1.8](docs/VALIDATION-0.1.8.md), [0.1.7](docs/VALIDATION-0.1.7.md), [0.1.6](docs/VALIDATION-0.1.6.md), [0.1.5](docs/VALIDATION-0.1.5.md). Сетевые и телефонные инструменты в `tools` и `app/src/androidTest` запускаются только явно; обычный unit suite не обращается к музыкальным сервисам.
+**GPL-3.0-or-later**. Preserve [LICENSE.txt](LICENSE.txt), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SOURCE_PROVENANCE.txt](SOURCE_PROVENANCE.txt) and `LICENSES/`. Fingerprinting adapts SongRec via Audile. QR dependencies are ZXing Android Embedded/Core and QRCoder under their respective licenses; pinned public source URLs/hashes are in `third-party-source/provenance.json`.
 
-## Участие
-
-Воспроизводимые ошибки и изменения приветствуются. Начните с [CONTRIBUTING.md](CONTRIBUTING.md). В отчётах не публикуйте токены, полные системные журналы, серийные номера устройств и личные аудиозаписи.
-
-## Лицензия и происхождение
-
-Проект распространяется по **GNU GPL v3.0 or later**, SPDX `GPL-3.0-or-later`. Полный текст: [LICENSE.txt](LICENSE.txt).
-
-Java-реализация отпечатка адаптирует алгоритм SongRec через Audile. Использованный [модуль songrecfp](https://github.com/AudileTeam/Audile/blob/5c8e77ccf1ee7e160602f466d49a7e26aabdd94b/core/recognition/native/songrecfp/Cargo.toml) указывает `GPL-3.0+`. Авторство, точные ревизии и изменения сохранены в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) и [SOURCE_PROVENANCE.txt](SOURCE_PROVENANCE.txt). Gradle wrapper распространяется по своим условиям Apache-2.0; его лицензия находится в [LICENSES/Gradle-wrapper.txt](LICENSES/Gradle-wrapper.txt).
-
-GPL разрешает использование, изменение и продажу при соблюдении её условий. При распространении приложения или производной версии нужно сохранять лицензию и предоставлять соответствующие исходники. См. [официальное руководство GPLv3](https://www.gnu.org/licenses/quick-guide-gplv3.en.html). Одна замена файла LICENSE на MIT не меняет условия использованного GPL-кода.
-
-CatchWave не связан с Google, YouTube, Apple, Shazam, SongRec или Audile и не является их официальным продуктом.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Never publish private QR/pairing data, signing keys, tokens, private audio, full logcat or device identifiers. CatchWave is not affiliated with Google, YouTube, Apple, Shazam, SongRec, Audile or AudioRelay.

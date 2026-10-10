@@ -1,0 +1,22 @@
+[
+  {
+    "file": "ZXing-Android-Embedded-4.3.0.txt",
+    "url": "https://raw.githubusercontent.com/journeyapps/zxing-android-embedded/v4.3.0/COPYING",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "file": "ZXing-Core-3.5.3.txt",
+    "url": "https://raw.githubusercontent.com/zxing/zxing/zxing-3.5.3/LICENSE",
+    "sha256": "3f62881f0566227a24b12e5a754cc79f39aaa94883038e95c94812e1f50af42f"
+  },
+  {
+    "file": "ZXing-Core-3.5.3-NOTICE.txt",
+    "url": "https://raw.githubusercontent.com/zxing/zxing/zxing-3.5.3/NOTICE",
+    "sha256": "4db4b60aace29ec6c5c4f13ca9cac1930d3c0c54bcc67dceead0c10771120e66"
+  },
+  {
+    "file": "QRCoder-1.6.0.txt",
+    "url": "https://raw.githubusercontent.com/Shane32/QRCoder/v1.6.0/LICENSE.txt",
+    "sha256": "044bd5eeee412a603a6e2b6201c7256da386788aaa4392be9870a5e899adea05"
+  }
+]

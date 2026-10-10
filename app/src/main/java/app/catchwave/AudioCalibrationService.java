@@ -61,6 +61,8 @@ public final class AudioCalibrationService extends Service {
         try{
             int uid=getPackageManager().getApplicationInfo(MediaBridge.PACKAGE,0).uid;
             AudioCorrection correction=new AudioCorrection();
+            boolean storedLag=false;
+            model.record("Уточнить по звуку: старт захвата; seek_lag="+(model.seekLagMs==Long.MIN_VALUE?"—":Long.toString(model.seekLagMs)));
             Thread.sleep(350);
             for(int pass=0;pass<3;pass++){
                 check();
@@ -72,9 +74,17 @@ public final class AudioCalibrationService extends Service {
                 if(!estimate.valid){
                     if(rms(pair[0].data)<.001)throw new IllegalStateException("Внутренний звук недоступен или тихий. YouTube Music либо Android могут ограничивать захват при нулевой громкости.");
                     if(rms(pair[1].data)<.0008)throw new IllegalStateException("Микрофон почти не слышит внешнюю музыку. Поднеси телефон ближе.");
-                    throw new IllegalStateException("Два фрагмента не дали однозначного совпадения. Проверь версию песни и непрерывное воспроизведение.");
+                    if(pass==2)throw new IllegalStateException("Два фрагмента не дали однозначного совпадения. Проверь версию песни и непрерывное воспроизведение.");
+                    model.record("Уточнить по звуку: окно не однозначно, повторяю");
+                    continue;
                 }
                 model.audioLagMs=estimate.lagMs;
+                if(!storedLag){
+                    int next=(int)Math.max(-1200,Math.min(1200,getSharedPreferences("settings",MODE_PRIVATE).getInt("audio_lag_ms",0)+Math.round(estimate.lagMs)));
+                    getSharedPreferences("settings",MODE_PRIVATE).edit().putInt("audio_lag_ms",next).apply();
+                    storedLag=true;
+                    model.record("Сохранена акустическая поправка "+next+" мс для следующего подхвата");
+                }
                 if(Math.abs(estimate.lagMs)<=15){model.audioVerified=true;result=String.format(Locale.ROOT,"Внутренний звук совпал: %+.1f мс. Задержка самого динамика сюда не входит.",estimate.lagMs);break;}
                 if(pass==2){result=String.format(Locale.ROOT,"После двух поправок осталось %+.1f мс. Точное совпадение не подтверждено; дальнейшую перемотку остановил.",estimate.lagMs);break;}
                 long advance=correction.nextAdvance(estimate.lagMs),position=CalibrationTarget.position(controller),to=position+advance;
@@ -84,11 +94,16 @@ public final class AudioCalibrationService extends Service {
                 model.record("Аудиопоправка: "+advance+" мс; seekTo="+to);
                 model.audioLagMs=Double.NaN;
                 boolean acknowledged=false;
+                long settledSession=-1,sessionUpdateAt=-1;
                 for(int attempt=0;attempt<20;attempt++){
                     Thread.sleep(100);check();PlaybackState p=controller.getPlaybackState();
-                    if(p.getLastPositionUpdateTime()>=requested&&Math.abs(CalibrationTarget.position(controller)-(to+SystemClock.elapsedRealtime()-requested))<=180){acknowledged=true;break;}
+                    long session=CalibrationTarget.position(controller);
+                    if(p.getLastPositionUpdateTime()>=requested&&Math.abs(session-(to+SystemClock.elapsedRealtime()-requested))<=180){acknowledged=true;settledSession=session;sessionUpdateAt=p.getLastPositionUpdateTime();break;}
                 }
                 if(!acknowledged)throw new IllegalStateException("YouTube Music не подтвердил перемотку. Повторную поправку не применяю.");
+                long tEst=model.track==null?-1:model.track.positionAt(SystemClock.elapsedRealtime(),0);
+                long lag=SeekClock.lag(requested,sessionUpdateAt);
+                model.record("t_est="+tEst+" t_session_after_seek="+settledSession+" Δ="+(tEst<0?"—":Long.toString(SeekClock.delta(tEst,settledSession)))+" seek_lag="+lag);
                 Thread.sleep(650);
             }
         }catch(InterruptedException ignored){result="Измерение отменено. Громкость восстановлена, если ты её не менял.";}
@@ -98,7 +113,7 @@ public final class AudioCalibrationService extends Service {
             main.post(()->{
                 boolean owned=ownsMeasurement;
                 cleanup();
-                if(owned){model.record("Уточнение звука: "+detail);
+                if(owned){model.record("Уточнить по звуку: итог verified="+model.audioVerified+" lag="+(Double.isFinite(model.audioLagMs)?String.format(Locale.ROOT,"%.1f",model.audioLagMs):"—")+" · "+detail);
                     if(model.running&&model.guardingTrack)model.update(model.audioVerified?"Звук сопоставлен":"Уточнение завершено",detail);}
                 stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
             });

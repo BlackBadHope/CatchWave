@@ -1,20 +1,32 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <!-- Qualifies connectedDevice FGS; this app never changes WiFi state. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>
     <uses-feature android:name="android.hardware.microphone" android:required="true"/>
     <queries><package android:name="com.google.android.apps.youtube.music"/></queries>
     <application android:theme="@style/AppTheme" android:label="Подхват" android:icon="@drawable/ic_wave"
-        android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
+        android:allowBackup="false" android:fullBackupContent="@xml/full_backup_content"
+        android:dataExtractionRules="@xml/data_extraction_rules" android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="false" android:supportsRtl="true" android:enableOnBackInvokedCallback="true" tools:targetApi="33">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <activity android:name=".LanAudioActivity" android:exported="false"/>
+        <activity android:name=".PairingScanActivity" android:exported="false"/>
+        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity" tools:node="remove"/>
+        <service android:name=".LanAudioService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaPlayback" android:stopWithTask="true"/>
         <service android:name=".SyncService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" android:stopWithTask="true"/>
         <service android:name=".AudioCalibrationService" android:exported="false" android:foregroundServiceType="microphone|mediaProjection" android:stopWithTask="true"/>
         <service android:name=".MediaAccessService" android:exported="true" android:label="Подхват — управление YouTube Music" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">

@@ -22,7 +22,9 @@ public final class Track {
         this.playbackTitle=title;this.playbackArtist=artist;
     }
     public long positionAt(long now,long adjustment) { return Math.max(0,offsetMs+Math.max(0,now-anchorMs)+adjustment); }
-    public boolean hasPosition() { return offsetMs!=Long.MIN_VALUE && Double.isFinite(timeSkew) && Math.abs(timeSkew)<0.005; }
+    public boolean hasOffset() { return offsetMs!=Long.MIN_VALUE; }
+    /** Offset is usable. Catalog timeskew on one window is not a session verdict; SourceTimeline judges speed. */
+    public boolean hasPosition() { return hasOffset()&&Double.isFinite(timeSkew); }
     public boolean matches(String actualTitle,String actualArtist) {
         if(normalize(artist).isEmpty()||normalize(actualArtist).isEmpty())return false;
         String expectedTitle=recordingTitle(title),candidateTitle=recordingTitle(actualTitle);

@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+using System.Diagnostics;
+using System.Buffers.Binary;
+namespace CatchWave.Host;
+internal enum HostStage { Listening, Tcp, Tls, Auth, Authenticated, Format, SilenceSent, AudioSent, Disconnected, Error }
+internal enum HostError { None, TlsHandshake, AuthRejected, AuthTimeout, Protocol, CaptureFailed, WriteTimeout, PeerClosed, Network, Internal }
+internal sealed record HostPermission(bool Enabled,long Generation);
+internal sealed record HostSnapshot(HostStage Stage,HostError Error,HostStage FailedAt,long Seconds,long Frames,long Skipped,int ClientOutput,int Sensors,bool ClientWants,bool ClientEffective,long ClientAgeMs,long ClientGeneration) {
+    internal bool Live=>Stage is HostStage.SilenceSent or HostStage.AudioSent;
+    internal bool Effective(bool allowed,long generation=0)=>Live&&ClientAgeMs>=0&&ClientAgeMs<1500&&ClientOutput>0&&ClientWants&&ClientEffective&&allowed&&ClientGeneration==generation;
+}
+internal sealed class HostStatus {
+    private readonly object gate=new();private readonly Stopwatch clock=new();
+    private HostStage stage=HostStage.Listening,failedAt;private HostError error;
+    private long frames,skipped,lastSequence=-1,reported=-1000,clientAt=-1;
+    private int output,sensors;private bool wants,effective;
+    private long clientGeneration;
+    internal event Action? Changed;
+    internal HostSnapshot Snapshot {get {lock(gate)return new(stage,error,failedAt,clock.ElapsedMilliseconds/1000,frames,skipped,output,sensors,wants,effective,clientAt<0?-1:clock.ElapsedMilliseconds-clientAt,clientGeneration);}}
+    internal void Begin(){lock(gate){clock.Restart();stage=HostStage.Tcp;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
+    internal void Stage(HostStage value){lock(gate){if(error!=HostError.None)return;stage=value;}Changed?.Invoke();}
+    internal void Failure(HostError code){lock(gate){if(error!=HostError.None)return;failedAt=stage;stage=code==HostError.PeerClosed?HostStage.Disconnected:HostStage.Error;error=code;effective=false;}Console.WriteLine($"CatchWave stage={Snapshot.Stage} error={code} at={Snapshot.FailedAt}");Changed?.Invoke();}
+    internal void End(){lock(gate){effective=false;output=sensors=0;if(error==HostError.None)stage=HostStage.Disconnected;}Changed?.Invoke();}
+    internal void Frame(long sequence,bool silence){bool notify;lock(gate){frames++;if(lastSequence>=0&&sequence>lastSequence+1)skipped+=sequence-lastSequence-1;lastSequence=sequence;
+        HostStage next=silence?HostStage.SilenceSent:HostStage.AudioSent;notify=stage!=next||clock.ElapsedMilliseconds-reported>=500;
+        if(error==HostError.None)stage=next;if(notify)reported=clock.ElapsedMilliseconds;}if(notify)Changed?.Invoke();}
+    internal void Client(byte[] body){if(body.Length!=13||body[0]!=1||body[1]>2||body[2]>5||body[3]>1||body[4]>1||BinaryPrimitives.ReadInt64BigEndian(body.AsSpan(5))<0)throw new IOException("Invalid client state");
+        lock(gate){output=body[1];sensors=body[2];wants=body[3]==1;effective=body[4]==1;clientGeneration=BinaryPrimitives.ReadInt64BigEndian(body.AsSpan(5));clientAt=clock.ElapsedMilliseconds;}Changed?.Invoke();}
+    internal static HostError Classify(Exception error,HostStage at)=>error switch {
+        System.Security.Authentication.AuthenticationException=>HostError.TlsHandshake,
+        OperationCanceledException=>at is HostStage.Tls or HostStage.Auth?HostError.AuthTimeout:HostError.WriteTimeout,
+        EndOfStreamException=>HostError.PeerClosed,
+        System.Net.Sockets.SocketException=>HostError.Network,
+        IOException=>at==HostStage.Tls?HostError.TlsHandshake:HostError.Protocol,
+        _=>HostError.Internal
+    };
+}

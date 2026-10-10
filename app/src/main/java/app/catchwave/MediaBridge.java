@@ -38,6 +38,7 @@ public class MediaBridge {
     }
     public boolean requestTrack(Track target) {
         MediaController c=controller();if(c==null)return false;
+        holdQueue(c);
         if(RecognitionClient.validMusicUrl(target.youtubeUrl)&&supports(c,PlaybackState.ACTION_PLAY_FROM_URI)) {
             c.getTransportControls().playFromUri(Uri.parse(target.youtubeUrl),Bundle.EMPTY);return true;
         }
@@ -47,6 +48,24 @@ public class MediaBridge {
             c.getTransportControls().playFromSearch(target.playbackArtist+" "+target.playbackTitle,extras);return true;
         }
         return false;
+    }
+    /** One selected recording: do not auto-advance the YouTube Music queue. */
+    static void holdQueue(MediaController c){
+        if(c==null)return;
+        MediaController.TransportControls t=c.getTransportControls();
+        try{t.getClass().getMethod("setRepeatMode",int.class).invoke(t,1);}catch(ReflectiveOperationException|RuntimeException ignored){}
+        try{t.getClass().getMethod("setShuffleMode",int.class).invoke(t,0);}catch(ReflectiveOperationException|RuntimeException ignored){}
+    }
+    static boolean pausePlayer(MediaController c){
+        if(!supports(c,PlaybackState.ACTION_PAUSE))return false;
+        PlaybackState s=c.getPlaybackState();
+        if(s==null||!advancing(s.getState()))return false;
+        c.getTransportControls().pause();return true;
+    }
+    static boolean advancing(int state){
+        return state==PlaybackState.STATE_PLAYING||state==PlaybackState.STATE_BUFFERING||state==PlaybackState.STATE_CONNECTING
+            ||state==PlaybackState.STATE_SKIPPING_TO_NEXT||state==PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM
+            ||state==PlaybackState.STATE_FAST_FORWARDING;
     }
     public static String launchUrl(Track target) {
         if(RecognitionClient.validMusicUrl(target.youtubeUrl))return target.youtubeUrl;

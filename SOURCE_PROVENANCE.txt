@@ -1,5 +1,5 @@
 Project: CatchWave / Podhvat
-Initial adaptation: 0.1.0; retained by the 0.1.8 release
+Initial adaptation: 0.1.0; retained by Android 0.1.20-hold-volume (code25)
 License: GPL-3.0-or-later
 Date: 2026-09-08
 
@@ -26,3 +26,9 @@ Format: PCM16 little-endian, mono, 16000 Hz, 10 seconds
 Probe: recognize first 6 seconds and seconds 2-8; confirm same track and offset delta 2000 +/- 250 ms.
 
 No third-party credentials, access tokens, account cookies, or private recordings are included.
+
+LAN receiver/gestures and Windows Host: original GPL-3.0-or-later code using public Android and Windows APIs.
+QR dependencies: ZXing Android Embedded v4.3.0, ZXing Core v3.5.3, QRCoder v1.6.0.
+Pinned public license URL/hash inventory: LICENSES/qr-license-sources.json.
+Pinned upstream source archives: third-party-source/provenance.json (download separately).
+No AudioRelay source, binary, extracted protocol or credentials incorporated.

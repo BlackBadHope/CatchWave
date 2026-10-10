@@ -140,6 +140,19 @@ public class RecognitionClientTest {
         assertEquals(RecognitionClient.Kind.TIMEOUT,c.resolveResult(track(),new RequestScope()).kind);
     }
 
+    @Test public void recognitionRequestOmitsSamplingSharehubAndVideo(){
+        String url=RecognitionClient.recognitionUrl();
+        assertTrue(url.startsWith("https://amp.shazam.com/discovery/v5/"));
+        assertTrue(url.contains("sync=true"));
+        assertFalse(url.contains("sampling"));
+        assertFalse(url.contains("sharehub"));
+        assertFalse(url.contains("video="));
+        assertFalse(url.contains("connected="));
+        assertTrue(RecognitionClient.allowedHost("amp.shazam.com"));
+        assertTrue(RecognitionClient.allowedHost("music.youtube.com"));
+        assertFalse(RecognitionClient.allowedHost("googleads.g.doubleclick.net"));
+        assertFalse(RecognitionClient.allowedHost("app-measurement.com"));
+    }
     @Test public void cancelledScopeNeverStartsAnotherRequestOrUsesCachedResult() throws Exception {
         String response=catalog(); AtomicInteger opened=new AtomicInteger();
         RecognitionClient c=client(url -> { opened.incrementAndGet(); return new ResponseConnection(200,response); },6000);
