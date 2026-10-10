@@ -26,10 +26,12 @@ public final class GestureEngine {
     public void reset(long now,String cause){resetCause=cause;
         resets++;orientation.reset();
         tilt.reset(now);initialized=false;pulse=false;tapArmed=true;taps=0;shakePeaks=0;shakeSign=0;
-        warmUntil=now+1500;lastSample=now;coolUntil=warmUntil;lastTap=now-10000;angularSpeed=0;shakeStarted=now;lastShakePeak=now-10000;
+        // Reset uses processing time; the first delivered sample may legitimately be earlier.
+        warmUntil=now+1500;lastSample=-1;coolUntil=warmUntil;lastTap=now-10000;angularSpeed=0;shakeStarted=now;lastShakePeak=now-10000;
     }
     public void tiltControl(boolean allowed){tiltControl=allowed;if(!allowed)tilt.stop();}
     public boolean neutralReady(long now){return enabled&&now>=warmUntil&&orientation.fresh(now);}
+    long neutralRemaining(long now){return Math.max(0,warmUntil-now);}
     public boolean tiltAvailable(long now){return neutralReady(now)&&orientation.tiltAvailable();}
     public void gyro(double x,double y,double z){angularSpeed=Math.sqrt(x*x+y*y+z*z);peakGyro=Math.max(peakGyro,angularSpeed);}
     public void displayRotation(int rotation,long now){if(rotation!=displayRotation){displayRotation=rotation;orientation.display(rotation);reset(now,"DISPLAY_CHANGE");}}
@@ -40,7 +42,7 @@ public final class GestureEngine {
     }
     public void acceleration(long now,double x,double y,double z){
         if(!enabled)return;
-        if(now<lastSample||now-lastSample>250)reset(now,"ACCELERATION_GAP");lastSample=now;
+        if(lastSample>=0&&(now<lastSample||now-lastSample>250))reset(now,"ACCELERATION_GAP");lastSample=now;
         if(!initialized){gx=x;gy=y;gz=z;initialized=true;}
         double dx=x-gx,dy=y-gy,dz=z-gz,energy=Math.sqrt(dx*dx+dy*dy+dz*dz);
         gx=.9*gx+.1*x;gy=.9*gy+.1*y;gz=.9*gz+.1*z;

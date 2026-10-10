@@ -1,6 +1,6 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.21-armed-diagnostics**, matching Android **0.1.21-armed-diagnostics/versionCode 27** source in this tree. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
+Portable .NET 9 Windows desktop Host **0.1.21-armed-diagnostics**, compatible with Android **0.1.22-arming-feedback/versionCode 29** source in this tree; no protocol or Host runtime change is required. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
 
 ## Build
 
@@ -35,4 +35,4 @@ One OnePlus 12 manual pilot accepted audio/gestures. Screen-off battery behavior
 
 ## Local diagnostics
 
-The Host keeps the last 256 metadata events under local application data in `CatchWave/diagnostics.log`. View/export buttons are in the window. Time/zone, nonsecret session ID, capture packet/silence counts, output reports, transitions, route-change detection and media-key dispatch results are included. No PCM/audio, QR, tokens/pins, endpoint names/IDs or track titles are written. Disk failures cannot stop audio; the counter remains visible. See [diagnostics](../docs/DIAGNOSTICS.md). Android 27 reports actual armed/neutral readiness; permission can be turned off even while the phone is locked or disconnected.
+The Host keeps the last 256 metadata events under local application data in `CatchWave/diagnostics.log`. View/export buttons are in the window. Time/zone, nonsecret session ID, capture packet/silence counts, output reports, transitions, route-change detection and media-key dispatch results are included. No PCM/audio, QR, tokens/pins, endpoint names/IDs or track titles are written. Disk failures cannot stop audio; the counter remains visible. See [diagnostics](../docs/DIAGNOSTICS.md). Android 29 reports actual armed/neutral readiness; permission can be turned off even while the phone is locked or disconnected.

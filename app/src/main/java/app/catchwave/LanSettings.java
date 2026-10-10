@@ -12,6 +12,7 @@ final class LanSettings {
     }
     boolean paired(){return prefs.getBoolean("paired",false);}
     boolean gestures(){return prefs.getBoolean("gestures",true);}
+    boolean activationSound(){return prefs.getBoolean("activationSound",true);}
     boolean hostControl(){return prefs.getBoolean("hostControl",false);}
     long controlEpoch(){return prefs.getLong("controlEpoch",0);}
     void hostControl(boolean enabled){prefs.edit().putBoolean("explicitControlUi21",true).putBoolean("hostControl",enabled).putLong("controlEpoch",controlEpoch()+1).apply();}

@@ -12,6 +12,8 @@ public final class LanAudioService extends Service implements SensorEventListene
     private static final String CHANNEL="catchwave_lan";private static final int NOTICE=24;
     private final Handler main=new Handler(Looper.getMainLooper());private final LanState state=LanState.INSTANCE;
     private final GestureEngine engine=new GestureEngine(this::gesture);
+    private final ActivationTone tones=new ActivationTone();private ActivationFeedback feedback=new ActivationFeedback(tones::play);
+    private String readiness="NONE";
     private SensorManager sensors;private AudioManager manager;private LanSettings settings;
     private LanReceiver receiver;private PowerManager.WakeLock lock;private AudioFocusRequest focus;
     private volatile boolean registered,commandReady;private boolean destroyed;
@@ -19,7 +21,7 @@ public final class LanAudioService extends Service implements SensorEventListene
     private long lastGyro=-1;private int volumeBefore=-1,volumeAfter=-1;private String lastVolumeAction="NONE";private long volumeAdjustments,volumeBoundarySkips;
     private VolumeStep.Device localVolume;
     private long lastOrientation=-1,orientationSamples;private boolean orientationRegistered;private int displayRotation=-1;
-    private long accelerationSamples,gyroSamples,staleSamples,gestureActions,acceptedAcks,rejectedAcks;
+    private long accelerationSamples,gyroSamples,staleSamples,invalidSamples,gestureActions,acceptedAcks,rejectedAcks;
     static volatile boolean uiVisible;
     static void maybeAutoStart(Context context){
         LanSettings settings=new LanSettings(context);
@@ -107,14 +109,22 @@ public final class LanAudioService extends Service implements SensorEventListene
         LanReceiver r=receiver;long epoch=settings.controlEpoch(),policy=r==null?-1:r.policyGeneration();
         if(epoch!=seenEpoch||policy!=seenPolicy){seenEpoch=epoch;seenPolicy=policy;DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"PERMISSION_CHANGE",settings.hostControl()?1:0,r!=null&&r.hostPermitted()?1:0,epoch,policy);arming.reset("PERMISSION_CHANGE");}
         arming.permit(registered&&orientationRegistered&&effectiveControl()&&GestureGate.visibleSession(state.connected,settings.gestures(),uiVisible,settings.screenOff()),now);
-        armTransition(now);engine.tiltControl(arming.commands(now));commandReady=arming.commands(now)&&engine.neutralReady(now);state.arming=arming.label(now);
+        armTransition(now);engine.tiltControl(arming.commands(now));updateReadiness(now);
     }
     private void armTransition(long now){
+        feedback.update(arming.active(now),settings.activationSound());
         if(armRevision==arming.revision())return;armRevision=arming.revision();engine.reset(now,"ARMING_"+arming.reason());if(receiver!=null)receiver.revokePending();
         DiagnosticStore.LOG.event(DiagnosticLog.Event.ARMING,arming.reason(),arming.remaining(now));
         if("ARMED".equals(arming.reason()))try{Vibrator vibrator=getSystemService(Vibrator.class);if(vibrator!=null&&vibrator.hasVibrator())vibrator.vibrate(VibrationEffect.createWaveform(new long[]{0,45,90,45},-1));}catch(RuntimeException ignored){}
     }
-    private void sensorBreak(long now,String reason){arming.reset(reason);armTransition(now);lastGyro=lastOrientation=lastAccel=-1;}
+    private void updateReadiness(long now){
+        commandReady=arming.commands(now)&&engine.neutralReady(now);
+        String next=!effectiveControl()?"NO_PERMISSION":!registered||!orientationRegistered?"NO_SENSORS":!arming.active(now)?"NOT_ARMED":!arming.commands(now)?"STOP_PENDING":!engine.neutralReady(now)?"NEUTRAL_WAIT":"READY";
+        if(!next.equals(readiness)){readiness=next;DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,next,arming.remaining(now),engine.neutralRemaining(now));}
+        String detail="READY".equals(next)?"Команды готовы":"NEUTRAL_WAIT".equals(next)?"Команды ждут нейтраль: ещё "+((engine.neutralRemaining(now)+999)/1000)+" с спокойствия":arming.explanation();
+        state.arming=arming.label(now)+"\n"+detail+"\nКод: "+arming.reason()+" / "+next;
+    }
+    private void sensorBreak(long now,String reason){arming.reset(reason);armTransition(now);lastGyro=lastOrientation=lastAccel=-1;updateReadiness(now);}
     private void updateSensorStatus(){
         long now=SystemClock.elapsedRealtime();
         state.sensorCode=!state.connected||!settings.gestures()||(!uiVisible&&!settings.screenOff())?0:!registered?3:!GestureGate.freshSample(now,lastGyro)?4:!orientationRegistered?5:!engine.neutralReady(now)?1:2;
@@ -167,12 +177,18 @@ public final class LanAudioService extends Service implements SensorEventListene
         if(!registered||receiver==null||!receiver.fresh()||!GestureGate.visibleSession(state.connected,settings.gestures(),uiVisible,settings.screenOff()))return;
         long now=SystemClock.elapsedRealtime(),sampleAt=event.timestamp/1000000;
         if(!GestureGate.freshSample(now,sampleAt)){staleSamples++;sensorBreak(now,"SENSOR_STALE");return;}
-        int rotation=getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRotation();
-        if(rotation!=displayRotation){displayRotation=rotation;engine.displayRotation(rotation,now);lastGyro=-1;lastOrientation=-1;lastAccel=-1;}
         float[] v=event.values;
+        if(v.length<3){invalidSamples++;sensorBreak(now,"INVALID_SENSOR");return;}
+        for(float value:v)if(!Float.isFinite(value)){invalidSamples++;sensorBreak(now,"INVALID_SENSOR");return;}
+        int rotation=getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRotation();
+        if(rotation!=displayRotation){
+            displayRotation=rotation;engine.displayRotation(rotation,now);arming.displayChange();armTransition(now);
+            // Display axes change; the physical device-frame sensor dependencies remain valid.
+        }
         if(event.sensor.getType()==Sensor.TYPE_GYROSCOPE){gyroSamples++;lastGyro=sampleAt;gyroNorm=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);engine.gyro(v[0],v[1],v[2]);}
         else if(event.sensor.getType()==Sensor.TYPE_GAME_ROTATION_VECTOR||event.sensor.getType()==Sensor.TYPE_ROTATION_VECTOR){
             orientationSamples++;
+            if(lastGyro<0||lastAccel<0)return; // First samples can arrive in any order after registration/reset.
             if(!GestureGate.freshSample(now,lastGyro)){sensorBreak(now,"GYRO_STALE");return;}
             float[] q=new float[4];SensorManager.getQuaternionFromVector(q,v);
             if(GestureGate.freshSample(now,lastAccel))arming.sample(sampleAt,q[0],q[1],q[2],q[3],gyroNorm,accelNorm);
@@ -183,7 +199,7 @@ public final class LanAudioService extends Service implements SensorEventListene
                 if(arming.commands(now))engine.acceleration(sampleAt,v[0],v[1],v[2]);
             }else if(lastGyro>=0&&lastOrientation>=0)sensorBreak(now,"DEPENDENCY_STALE");
         }
-        commandReady=arming.commands(now)&&engine.neutralReady(now);
+        updateReadiness(now);
     }
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){if(accuracy==SensorManager.SENSOR_STATUS_UNRELIABLE)sensorBreak(SystemClock.elapsedRealtime(),"SENSOR_ACCURACY");}
     private Notification notification(){
@@ -193,7 +209,7 @@ public final class LanAudioService extends Service implements SensorEventListene
             .setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Остановить",stop).build()).build();
     }
     @Override public void onDestroy(){
-        destroyed=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,state.error==LanConnection.Error.NONE?"SERVICE_DESTROYED":state.error.name());arming.reset("SESSION_END");main.removeCallbacksAndMessages(null);sensors.unregisterListener(this);engine.setEnabled(false,SystemClock.elapsedRealtime());
+        destroyed=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,state.error==LanConnection.Error.NONE?"SERVICE_DESTROYED":state.error.name());arming.reset("SESSION_END");armTransition(SystemClock.elapsedRealtime());tones.close();main.removeCallbacksAndMessages(null);sensors.unregisterListener(this);engine.setEnabled(false,SystemClock.elapsedRealtime());
         if(receiver!=null)receiver.close();if(lock!=null&&lock.isHeld())lock.release();if(focus!=null)manager.abandonAudioFocusRequest(focus);
         if(mutedVolume>=0&&manager.getStreamVolume(AudioManager.STREAM_MUSIC)==0)manager.setStreamVolume(AudioManager.STREAM_MUSIC,mutedVolume,0);
         state.stopped(settings);
@@ -208,7 +224,7 @@ public final class LanAudioService extends Service implements SensorEventListene
         out.println("stage="+state.stage+" error="+state.error+" lastStage="+state.lastStage+" effectiveControl="+effectiveControl()+" hostAllowed="+state.hostAllowed);
         out.println("started="+state.started+" connected="+state.connected+" sensorsRegistered="+registered+" uiVisible="+uiVisible);
         out.println("gestures="+settings.gestures()+" screenOff="+settings.screenOff()+" resume="+settings.resume()+" wakeHeld="+(lock!=null&&lock.isHeld()));
-        out.println("accelerationSamples="+accelerationSamples+" gyroSamples="+gyroSamples+" staleSamples="+staleSamples+" gestureActions="+gestureActions);
+        out.println("accelerationSamples="+accelerationSamples+" gyroSamples="+gyroSamples+" staleSamples="+staleSamples+" invalidSamples="+invalidSamples+" gestureActions="+gestureActions);
         out.println("acceptedAcks="+acceptedAcks+" rejectedAcks="+rejectedAcks);
         out.println("orientationRegistered="+orientationRegistered+" orientationSamples="+orientationSamples+" hostControl="+settings.hostControl());
         out.println("armingActive="+arming.active(SystemClock.elapsedRealtime())+" armingRemainingMs="+arming.remaining(SystemClock.elapsedRealtime())+" armingBaseline="+arming.baseline()+" armingReason="+arming.reason()+" diagnosticStorageFailures="+DiagnosticStore.failures());

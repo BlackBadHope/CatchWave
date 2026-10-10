@@ -48,7 +48,7 @@ public class LanConnectionTest {
         pair();settings.hostControl(true);state.initialize(settings);
         var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
             Activity a=life.get();assertEquals(LanConnection.Stage.SCANNED,state.stage);
-            assertTrue(((Button)field(a,"control")).isEnabled());assertEquals("Выключить управление",((Button)field(a,"control")).getText().toString());
+            assertTrue(((Button)field(a,"control")).isEnabled());assertEquals("Отозвать разрешение управления",((Button)field(a,"control")).getText().toString());
             assertTrue(((TextView)field(a,"controlStatus")).getText().toString().startsWith("Выключено"));
         }finally{life.destroy();}
     }
@@ -57,7 +57,7 @@ public class LanConnectionTest {
         var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
             Activity a=life.get();Button b=(Button)field(a,"control");assertTrue(b.isEnabled());assertFalse(settings.hostControl());
             b.performClick();assertFalse(settings.hostControl());ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertTrue(settings.hostControl());assertEquals("Выключить управление",b.getText().toString());
+            assertTrue(settings.hostControl());assertEquals("Отозвать разрешение управления",b.getText().toString());
             b.performClick();assertFalse(settings.hostControl());assertEquals("Разрешить управление",b.getText().toString());
             state.hostAllowed=false;state.changed();Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse(b.isEnabled());assertTrue(((TextView)field(a,"controlStatus")).getText().toString().contains("запрещено"));
         }finally{life.destroy();}

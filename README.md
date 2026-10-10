@@ -2,9 +2,9 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current Android source: **0.1.21-armed-diagnostics, versionCode 27**. The Windows Host in this tree uses the matching authenticated protocol. The earlier Android versionCode 25 passed a short owner-operated audio/gesture pilot on a OnePlus 12 running Android 16, including held volume adjustment. This earlier single-device acceptance does not validate the new version-27 arming gate; latency, battery life and gesture reliability have not been benchmarked across devices.
+Current Android source: **0.1.22-arming-feedback, versionCode 29**. The Windows Host **0.1.21-armed-diagnostics** remains compatible; this fix changes no wire protocol. The earlier Android versionCode 25 passed a short owner-operated audio/gesture pilot on a OnePlus 12 running Android 16, including held volume adjustment. This earlier single-device acceptance does not validate the arming gate or version-29 integration fix; latency, battery life and gesture reliability have not been benchmarked across devices.
 
-**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 27 adds a timed intent gate, but physical reliability of that gate is still unmeasured. It is not production-ready.
+**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 27 added a timed intent gate; version 29 fixes service integration resets and adds optional activation sounds. Physical reliability remains unmeasured. It is not production-ready.
 
 ## Windows audio and gesture remote
 
@@ -24,15 +24,15 @@ Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor sa
 1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
 2. On a trusted shared LAN, start `CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372`.
 3. Open **«Звук с ПК»** on the phone, scan the locally displayed Host QR, confirm pairing and press **«Подключиться»**. Grant Camera for scanning and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. Restarting the Host requires a new scan.
-4. Allow control explicitly in the Host and on the phone. Commands remain locked. Place the phone nearly horizontal, screen down, still for 0.85 s; rotate it on the table about 90 degrees either way, then stop for 0.25 s. Two short vibrations indicate a fixed 10 s command window. Movement does not extend it. Return to the original screen-down heading or turn it steadily screen-up to lock; either stop posture suppresses commands immediately and locks after 0.15 s of stability.
-5. After activation and after each table/held posture transition, hold still for 1.5 seconds to set fresh neutral; use **«Обновить нейтраль»** after changing posture. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
+4. Allow control explicitly in the Host and on the phone. Commands remain locked. Place the phone nearly horizontal, screen down, still for 0.85 s; rotate it on the table about 90 degrees either way, then stop for 0.25 s. Two short vibrations and an optional quiet rising tone indicate a fixed 10 s command window; a descending tone indicates its closure. These sounds follow the window, not the permission switch, and can be disabled. Movement does not extend it. Return to the original screen-down heading or turn it steadily screen-up to lock; either stop posture suppresses commands immediately and locks after 0.15 s of stability.
+5. After activation and after each table/held posture transition, hold still for 1.5 seconds to set fresh neutral; rotation of the display resets neutral while preserving the deadline. **«Сбросить активацию и нейтраль»** closes the window and requires activation again. A nearly horizontal stable face-up pose closes it even in a hand. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
 6. Gestures normally require CatchWave to be visible. The optional **«Разрешить жесты при выключенном экране»** setting uses the running foreground service and a partial wake lock. Screen-off behavior and battery cost remain experimental. Use **«Отключиться»** to stop the Android session; close the Host to end its pairing session.
 
 Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
 
 The phone and Host offer local diagnostic view/export: at most 256 events, timestamps/timezones, nonsecret session correlation, source/output/focus/route, frame counters and command/volume results. No audio, raw sensor vectors, QR, credentials, device names or track titles are recorded. See [diagnostics](docs/DIAGNOSTICS.md).
 
-See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-ARMED-DIAGNOSTICS.md).
+See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-ARMING-FEEDBACK.md).
 
 ## Music recognition and handoff
 

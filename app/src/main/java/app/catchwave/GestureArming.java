@@ -11,6 +11,7 @@ final class GestureArming {
     private String reason="OFF";
     synchronized void permit(boolean value,long now){if(value!=allowed){allowed=value;clear(value?"LOCKED":"OFF");}tick(now);}
     synchronized void reset(String why){clear(why);}
+    synchronized void displayChange(){if(active){reason="DISPLAY_NEUTRAL";revision++;}}
     private void clear(String why){baseline=active=flatPosture=false;last=baseSince=turnSince=stopSince=flatSince=-1;until=0;reason=allowed?why:"OFF";revision++;}
     synchronized void tick(long now){if(active&&now>=until)clear("EXPIRED");if(last>=0&&(now<last||now-last>150))clear("SENSOR_GAP");}
     synchronized boolean active(long now){tick(now);return allowed&&active;}
@@ -56,5 +57,18 @@ final class GestureArming {
         return Math.atan2(Math.sin(2*Math.atan2(rz,rw)),Math.cos(2*Math.atan2(rz,rw)));
     }
     private static double distance(double a,double b,double c,double d,double w,double x,double y,double z){return 2*Math.acos(Math.min(1,Math.abs(a*w+b*x+c*y+d*z)));}
-    synchronized String label(long now){return !allowed?"Выключено":active(now)?"Управление: "+((remaining(now)+999)/1000)+" с":baseline?"Заблокировано — поверните экраном вниз на 90°":"Заблокировано — положите экраном вниз на 0,85 с";}
+    synchronized String label(long now){return !allowed?"Жестовое окно выключено":active(now)?"Жестовое окно: "+((remaining(now)+999)/1000)+" с":baseline?"Заблокировано — поверните экраном вниз на 90°":"Заблокировано — положите экраном вниз на 0,85 с";}
+    synchronized String explanation(){return switch(reason){
+        case "FACE_UP" -> "Окно закрыто: телефон устойчиво экраном вверх";
+        case "RETURNED" -> "Окно закрыто: возврат к исходному углу экраном вниз";
+        case "EXPIRED" -> "Окно закрыто: истекли 10 секунд";
+        case "STOP_PENDING" -> "Команды приостановлены: проверка положения выключения";
+        case "PICKUP_NEUTRAL","TABLE_NEUTRAL","DISPLAY_NEUTRAL" -> "Положение изменилось: держите спокойно для новой нейтрали";
+        case "MANUAL_NEUTRAL" -> "Активация сброшена кнопкой; повторите поворот на столе";
+        case "SENSOR_GAP","SENSOR_STALE","GYRO_STALE","ACCEL_STALE","DEPENDENCY_STALE","SENSOR_ACCURACY","INVALID_SENSOR" -> "Окно закрыто: датчики недостоверны или измерения задержались ("+reason+")";
+        case "LEFT_TABLE" -> "Активация сброшена: телефон поднят до поворота на 90°";
+        case "BASE_EXPIRED" -> "Исходное положение устарело: снова положите экраном вниз";
+        case "PERMISSION_CHANGE" -> "Разрешение изменилось: нужна новая активация";
+        default -> "Состояние активации: "+reason;
+    };}
 }

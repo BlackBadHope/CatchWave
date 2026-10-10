@@ -32,8 +32,11 @@ public final class LanAudioActivity extends Activity {
         });body.addView(control);
         Switch gestures=new Switch(this);gestures.setText("Разрешить жесты");gestures.setChecked(settings.gestures());body.addView(gestures);
         gestures.setOnCheckedChangeListener((button,value)->{settings.prefs.edit().putBoolean("gestures",value).apply();refresh();});
+        Switch sound=new Switch(this);sound.setText("Звук открытия и закрытия жестового окна");sound.setChecked(settings.activationSound());body.addView(sound);
+        sound.setOnCheckedChangeListener((button,value)->{settings.prefs.edit().putBoolean("activationSound",value).apply();refresh();});
         TextView guide=new TextView(this);guide.setText("Все команды заблокированы до активации. Разрешите управление на обеих сторонах, положите телефон экраном вниз почти горизонтально на 0,85 с, затем поверните на столе примерно на 90° в любую сторону и остановитесь на 0,25 с. Две короткие вибрации: окно управления 10 с. Обычное движение его не продлевает. Возврат экраном вниз к исходному углу или устойчивый переворот экраном вверх блокирует команды.\nПосле активации и после поднятия держите спокойно 1,5 с для свежей нейтрали. Медленно наклоните вправо/влево примерно на 30° и удерживайте: громкость шагами каждые 0,4 с. Возврат в нейтраль останавливает наклон. Встряхивание или 3 постукивания: play/pause; 4: next; 5: previous; 6: mute/restore телефона. Постукивайте с промежутками 0,2–0,5 с, затем пауза 0,7 с.\nЗвук не зависит от блокировки жестов. Выключайте разрешение управления вне намеренного использования. Режим экспериментален; случайные жесты ещё требуют проверки на устройстве.");body.addView(guide);
-        Button neutral=new Button(this);neutral.setText("Обновить нейтраль");neutral.setOnClickListener(v->{if(state.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.CALIBRATE));});body.addView(neutral);
+        TextView soundGuide=new TextView(this);soundGuide.setText("Короткий тон вверх: открыто окно 10 с; вниз: закрыто. Разрешение управления само по себе не звучит. Громкость сигнала зависит от текущей media volume; после открытия всё ещё нужна спокойная нейтраль. Устойчивое почти горизонтальное положение экраном вверх закрывает окно даже в руке.");body.addView(soundGuide);
+        Button neutral=new Button(this);neutral.setText("Сбросить активацию и нейтраль");neutral.setOnClickListener(v->{if(state.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.CALIBRATE));});body.addView(neutral);
         LinearLayout extras=new LinearLayout(this);extras.setOrientation(LinearLayout.VERTICAL);extras.setVisibility(android.view.View.GONE);
         Button more=new Button(this);more.setText("Дополнительно");more.setOnClickListener(v->extras.setVisibility(extras.getVisibility()==android.view.View.GONE?android.view.View.VISIBLE:android.view.View.GONE));body.addView(more);body.addView(extras);
         advanced=new TextView(this);extras.addView(advanced);
@@ -61,7 +64,7 @@ public final class LanAudioActivity extends Activity {
         if(isFinishing()||status==null)return;
         status.setText(state.status);detail.setText(state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
         connect.setText(state.started?"Отключиться":state.error==LanConnection.Error.NONE?"Подключиться":"Повторить подключение");scan.setEnabled(!state.started);
-        boolean effective=effectiveControl();control.setText(settings.hostControl()?"Выключить управление":"Разрешить управление");control.setEnabled(settings.hostControl()||state.connected&&state.hostAllowed);
+        boolean effective=effectiveControl();control.setText(settings.hostControl()?"Отозвать разрешение управления":"Разрешить управление");control.setEnabled(settings.hostControl()||state.connected&&state.hostAllowed);
         String reason=!state.connected?"Нет свежего соединения":!state.hostAllowed?"Управление запрещено в текущем Host на ПК":settings.hostControl()?"Разрешение подтверждено на обеих сторонах":"Включите управление этой кнопкой";
         controlStatus.setText(state.arming+"\n"+reason+"\n"+state.diagnostic);
         advanced.setText(settings.paired()?settings.host()+":"+settings.port()+"\nSHA-256:\n"+fingerprint():"ПК ещё не сопряжён");
