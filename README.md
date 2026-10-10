@@ -2,9 +2,9 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current Android source: **0.1.20-hold-volume, versionCode 25**. The Windows Host in this tree uses the matching authenticated protocol. A OnePlus 12 running Android 16 passed a short owner-operated audio/gesture pilot, including held volume adjustment. This is single-device acceptance; latency, battery life and gesture reliability have not been benchmarked across devices.
+Current Android source: **0.1.21-armed-diagnostics, versionCode 27**. The Windows Host in this tree uses the matching authenticated protocol. A OnePlus 12 running Android 16 passed a short owner-operated audio/gesture pilot, including held volume adjustment. This is single-device acceptance; latency, battery life and gesture reliability have not been benchmarked across devices.
 
-**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 25 is not production-ready; intentional timed arming is not implemented in this version.
+**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 27 adds a timed intent gate, but physical reliability of that gate is still unmeasured. It is not production-ready.
 
 ## Windows audio and gesture remote
 
@@ -24,19 +24,21 @@ Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor sa
 1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
 2. On a trusted shared LAN, start `CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372`.
 3. Open **«Звук с ПК»** on the phone, scan the locally displayed Host QR, confirm pairing and press **«Подключиться»**. Grant Camera for scanning and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. Restarting the Host requires a new scan.
-4. Allow control explicitly in the Host and on the phone. Fresh audio/output confirmation and both permissions are required for Windows commands and held volume. Turning management off on either side stops held adjustment.
-5. Hold still for 1.5 seconds to set neutral; use **«Обновить нейтраль»** after changing posture. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
+4. Allow control explicitly in the Host and on the phone. Commands remain locked. Place the phone nearly horizontal, screen down, still for 0.85 s; rotate it on the table about 90 degrees either way, then stop for 0.25 s. Two short vibrations indicate a fixed 10 s command window. Movement does not extend it. Return to the original screen-down heading or turn it steadily screen-up to lock; either stop posture suppresses commands immediately and locks after 0.15 s of stability.
+5. After activation and after each table/held posture transition, hold still for 1.5 seconds to set fresh neutral; use **«Обновить нейтраль»** after changing posture. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
 6. Gestures normally require CatchWave to be visible. The optional **«Разрешить жесты при выключенном экране»** setting uses the running foreground service and a partial wake lock. Screen-off behavior and battery cost remain experimental. Use **«Отключиться»** to stop the Android session; close the Host to end its pairing session.
 
 Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
 
-See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-LAN-HOLD.md).
+The phone and Host offer local diagnostic view/export: at most 256 events, timestamps/timezones, nonsecret session correlation, source/output/focus/route, frame counters and command/volume results. No audio, raw sensor vectors, QR, credentials, device names or track titles are recorded. See [diagnostics](docs/DIAGNOSTICS.md).
+
+See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-ARMED-DIAGNOSTICS.md).
 
 ## Music recognition and handoff
 
 The original mode records a short microphone fragment, computes a fingerprint locally, sends it to Shazam recognition over HTTPS, and asks native YouTube Music to continue at the estimated position. The Shazam app is not required. Matching metadata does not guarantee the same remix/master/recording. Live Sync requires headphones and access to the YouTube Music media session. Microphone recognition and LAN receiving are separate modes.
 
-Recognition requires Microphone, internet and YouTube Music. Notification access is used for its media session; message notifications are not read. Optional acoustic refinement asks Android for screen/audio capture consent. Audio buffers remain in RAM. Fingerprints go to Shazam; title/artist searches go to YouTube. Those services see the network address. There is no CatchWave account, backend, advertising ID or analytics. LAN pairing preferences and finite failure/stage values are stored privately on the phone; Windows saves only the owner's control permission boolean. See [known limitations](KNOWN_ISSUES.md).
+Recognition requires Microphone, internet and YouTube Music. Notification access is used for its media session; message notifications are not read. Optional acoustic refinement asks Android for screen/audio capture consent. Audio buffers remain in RAM. Fingerprints go to Shazam; title/artist searches go to YouTube. Those services see the network address. There is no CatchWave account, backend, advertising ID or analytics. LAN pairing preferences, finite failure/stage values and a bounded local diagnostic journal are stored privately on the phone. Windows saves its permission boolean and bounded metadata journal. See [known limitations](KNOWN_ISSUES.md).
 
 ## Compatibility
 
@@ -50,7 +52,7 @@ Recognition requires Microphone, internet and YouTube Music. Notification access
 
 These SDK/OS baselines do not certify other phone models or future Android releases. API 33 notification/typed parcel access, API 34 capture consent and API 31 privacy-sensitive capture calls are guarded; release lint checks the API 30 minimum. Windows support also depends on the runtime's current [official OS matrix](https://github.com/dotnet/core/blob/main/release-notes/9.0/supported-os.md); do not infer support for every Windows 10 edition or Server from the framework's capabilities. The accepted Windows build is x64; ARM64 needs separate testing.
 
-Audio receiving does not require gesture sensors. Gestures require both an accelerometer and gyroscope; absence or failed registration of either disables all gestures. Tilt prefers game rotation vector and falls back to ordinary rotation vector. With neither, tilt is disabled while taps/shake can still run with fresh accel/gyro samples. A camera is optional for APK installation but required by the current QR-only pairing flow. The manifest requires a microphone because the original recognition mode remains included.
+Audio receiving does not require gesture sensors. Gestures require both an accelerometer and gyroscope; absence or failed registration of either disables all gestures. Tilt prefers game rotation vector and falls back to ordinary rotation vector. Without either orientation vector, all commands stay locked because intentional arming cannot be established. Audio remains independent. A camera is optional for APK installation but required by the current QR-only pairing flow. The manifest requires a microphone because the original recognition mode remains included.
 
 Only the phone's built-in speaker route was used in the audio pilot. Android can route media to headphones/Bluetooth, but latency, fixed-volume behavior and route changes are not certified. OEM battery restrictions can stop background playback/sensors despite a foreground service and optional wake lock. Screen-off mode and sensor thresholds need device-specific checks; no battery whitelist or settings bypass is performed.
 

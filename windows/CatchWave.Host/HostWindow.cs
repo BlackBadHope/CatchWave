@@ -34,9 +34,11 @@ internal sealed class HostWindow:Form {
         var details=new Label{Text=$"{address}:{port}\nСертификат SHA-256:\n{Convert.ToHexString(SHA256.HashData(identity.Certificate.RawData))}",AutoSize=true,MaximumSize=new Size(440,0),Visible=false};
         revoke.Visible=false;revoke.Click+=(_,_)=>SetMedia(false);
         var advanced=new Button{Text="Дополнительно",Width=440,Height=36};advanced.Click+=(_,_)=>{details.Visible=!details.Visible;revoke.Visible=details.Visible;};body.Controls.Add(advanced);body.Controls.Add(details);body.Controls.Add(revoke);
+        var logs=new Button{Text="Показать журнал диагностики",Width=440,Height=36};logs.Click+=(_,_)=>{using var dialog=new Form{Text="Последние 256 событий — без аудио и секретов",Width=900,Height=650};dialog.Controls.Add(new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,Text=model.Log.Text().Replace("\n",Environment.NewLine)});dialog.ShowDialog(this);};body.Controls.Add(logs);
+        var export=new Button{Text="Экспорт диагностики",Width=440,Height=36};export.Click+=(_,_)=>{using var pick=new SaveFileDialog{Filter="Text|*.txt",FileName="CatchWave-diagnostics.txt"};if(pick.ShowDialog(this)==DialogResult.OK)try{File.WriteAllText(pick.FileName,model.Log.Text());}catch(IOException){MessageBox.Show(this,"Не удалось сохранить диагностику");}catch(UnauthorizedAccessException){MessageBox.Show(this,"Система запретила запись диагностики");}};body.Controls.Add(export);
         body.Controls.Add(new Label{Text="QR приватен. Не отправляйте его или скриншот. Закрытие Host отзывает сопряжение; после перезапуска нужен новый QR.",AutoSize=true,MaximumSize=new Size(440,0)});
         control.Click+=(_,_)=>{
-            if(model.Snapshot.Effective(MediaEnabled,Permission.Generation))SetMedia(false);
+            if(MediaEnabled)SetMedia(false);
             else if(!locked&&!MediaEnabled&&MessageBox.Show(this,"Разрешить командам play/pause, next и previous управлять проигрывателем этого ПК? Телефон также должен разрешить управление.","Включить управление хостом?",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
         };
         model.Changed+=RefreshState;var timer=new System.Windows.Forms.Timer{Interval=500};timer.Tick+=(_,_)=>Render();timer.Start();
@@ -44,7 +46,7 @@ internal sealed class HostWindow:Form {
         Shown+=(_,_)=>{Render();if(stop.IsCancellationRequested)Close();};
         stop.Token.Register(()=>{if(IsHandleCreated&&!IsDisposed)try{BeginInvoke(new Action(Close));}catch(InvalidOperationException){}});Render();
     }
-    private void SetMedia(bool value){if(locked)return;lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
+    private void SetMedia(bool value){if(locked)return;model.Log.Event("CONTROL",value?"PERMISSION_ON":"PERMISSION_OFF");lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
         saving.Text=save(value)?"":value?"Включение не сохранено; оно действует только в этом сеансе.":"Выключение не сохранено. После перезапуска проверьте разрешение ПК.";Render();}
     internal bool Execute(byte action,HostPermission observed){lock(policyGate){return Permission==observed&&observed.Enabled&&MediaKeys.Send(action);}}
     private void RefreshState(){if(IsDisposed)return;if(IsHandleCreated)try{BeginInvoke(new Action(Render));}catch(InvalidOperationException){}}
@@ -60,12 +62,12 @@ internal sealed class HostWindow:Form {
             HostError.CaptureFailed=>"Не удалось открыть или читать аудиовыход Windows.",HostError.PeerClosed=>"Телефон закрыл соединение; проверьте его код ошибки.",
             HostError.Protocol=>"Несовместимые данные. Нужны Host и Android из одного комплекта.",_=>"Проверьте состояние на телефоне и повторите подключение."
         });
-        statistics.Text=$"Сеанс: {s.Seconds} с · отправлено PCM: {s.Frames} · пропущено интервалов: {s.Skipped}";
+        statistics.Text=$"Сеанс: {s.Seconds} с · отправлено PCM: {s.Frames} · пропущено интервалов: {s.Skipped}\nПоследняя причина: {model.Log.LastReason} · ошибок записи журнала: {model.Log.StorageFailures}";
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
         phone.Text=!fresh?"Вывод и датчики телефона: подтверждения нет":$"Телефон: {(s.ClientOutput==0?"вывод ещё не подтверждён":s.ClientOutput==1?"AudioTrack принял тишину":"AudioTrack принял звук")}; датчики: "+(s.Sensors switch {0=>"выключены",1=>"настройка нейтрали",2=>"нейтраль готова",3=>"недоступны",4=>"ожидание измерений",_=>"наклоны недоступны"});
         bool effective=s.Effective(MediaEnabled,Permission.Generation);
-        string cause=locked?"Команды заблокированы флагом текущего пилота":!fresh||s.ClientOutput==0?"Нет свежего подтверждения вывода телефона":!MediaEnabled?"Разрешение ПК выключено":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Ожидается подтверждение готовности телефона":"Разрешено на обеих сторонах";
+        string cause=locked?"Команды заблокированы флагом текущего пилота":!fresh||s.ClientOutput==0?"Нет свежего подтверждения вывода телефона":!MediaEnabled?"Разрешение ПК выключено":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активация, нейтраль или разрешение ещё не готовы":"Телефон подтвердил окно команд; таймер виден на телефоне";
         controlStatus.Text=(effective?"Управление включено":"Управление выключено")+" — "+cause;
-        control.Text=effective?"Выключить управление хостом":"Включить управление хостом";control.Enabled=!locked&&fresh&&s.ClientOutput>0&&(!MediaEnabled||effective);revoke.Enabled=!locked&&MediaEnabled;
+        control.Text=MediaEnabled?"Выключить управление хостом":"Включить управление хостом";control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
     }
 }

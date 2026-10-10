@@ -30,9 +30,25 @@ public class HeldServiceTest {
         field(receiver,"format",new LanProtocol.Format(format));field(receiver,"latestSequence",0L);
         ((LanFreshStream)field(receiver,"stream")).received(SystemClock.elapsedRealtime());receiver.policy(policy(true,0));
         field(service,"receiver",receiver);field(service,"registered",true);LanState.INSTANCE.connected=true;LanState.INSTANCE.hostAllowed=true;LanAudioService.uiVisible=true;
+        field(service,"orientationRegistered",true);field(service,"seenEpoch",settings.controlEpoch());field(service,"seenPolicy",receiver.policyGeneration());arm();
+        ((LanFreshStream)field(receiver,"stream")).received(SystemClock.elapsedRealtime());
         manager=service.getSystemService(AudioManager.class);manager.setStreamVolume(AudioManager.STREAM_MUSIC,10,0);assertTrue(receiver.fresh());assertTrue(receiver.localControlAllowed());
     }
     @After public void cleanup(){life.destroy();settings.prefs.edit().clear().commit();LanAudioService.uiVisible=false;}
+    void arm()throws Exception{
+        GestureArming gate=(GestureArming)field(service,"arming");long start=SystemClock.elapsedRealtime();gate.permit(true,start);
+        for(long n=0;n<=900;n+=50)gate.sample(start+n,0,1,0,0,0,9.81);
+        double c=Math.sqrt(.5);for(long n=950;n<=1250;n+=50)gate.sample(start+n,0,c,-c,0,0,9.81);
+        GestureEngine e=(GestureEngine)field(service,"engine");e.setEnabled(true,start+1250);
+        for(long n=1300;n<=2900;n+=50){gate.sample(start+n,0,c,-c,0,0,9.81);e.gyro(0,0,0);e.orientation(start+n,0,c,-c,0);e.acceleration(start+n,0,0,-9.81);}
+        field(service,"armRevision",gate.revision());ShadowSystemClock.advanceBy(Duration.ofMillis(2900));assertTrue(e.neutralReady(SystemClock.elapsedRealtime()));assertTrue(gate.commands(SystemClock.elapsedRealtime()));
+    }
+    @Test public void unarmedSessionRejectsAllCommandsIncludingMute()throws Exception{((GestureArming)field(service,"arming")).reset("TEST_LOCK");for(GestureEngine.Action a:GestureEngine.Action.values())gesture(a);assertEquals(10,manager.getStreamVolume(AudioManager.STREAM_MUSIC));assertEquals(0L,field(service,"gestureActions"));}
+    @Test public void fixedDeadlineBlocksWithoutAHealthCallback()throws Exception{ShadowSystemClock.advanceBy(Duration.ofMillis(11000));((LanFreshStream)field(receiver,"stream")).received(SystemClock.elapsedRealtime());gesture(GestureEngine.Action.MUTE);assertEquals(10,manager.getStreamVolume(AudioManager.STREAM_MUSIC));}
+    @Test public void manualNeutralInvalidatesDequeuedCommandRevision()throws Exception{
+        GestureArming gate=(GestureArming)field(service,"arming");LanReceiver gated=new LanReceiver(settings,new LanReceiver.Listener(){public boolean ready(){return false;}public void connected(){}public void finished(){}public void ack(boolean a){}},()->gate.commands(SystemClock.elapsedRealtime()),gate::revision);
+        long old=gate.revision();assertTrue(gated.commandArmed(old));service.onStartCommand(new android.content.Intent().setAction(LanAudioService.CALIBRATE),0,1);assertFalse(gated.commandArmed(old));assertFalse(gate.active(SystemClock.elapsedRealtime()));
+    }
     void gesture(GestureEngine.Action action)throws Exception{Method m=LanAudioService.class.getDeclaredMethod("gesture",GestureEngine.Action.class);m.setAccessible(true);m.invoke(service,action);}
     @Test public void receiverOffBlocksLocalStepBeforeQueuedUiFlagChanges()throws Exception{
         gesture(GestureEngine.Action.VOLUME_DOWN);assertTrue(manager.getStreamVolume(AudioManager.STREAM_MUSIC)<10);int current=manager.getStreamVolume(AudioManager.STREAM_MUSIC);

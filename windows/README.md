@@ -32,3 +32,7 @@ PC control starts OFF. Its owner-approved boolean is stored in `%LOCALAPPDATA%/C
 `--interop-test <java.exe> <classes>` uses the actual Java parser/timeline/freshness code and an 800 ms fake focus delay. Its generated identity goes to the Java child through stdin, never printed. Automated tests do not exercise physical Android AudioTrack, real WASAPI capture or player transitions.
 
 One OnePlus 12 manual pilot accepted audio/gestures. Screen-off battery behavior, broader support, controlled AudioRelay A/B quality and an independent CatchWave endpoint remain open.
+
+## Local diagnostics
+
+The Host keeps the last 256 metadata events under local application data in `CatchWave/diagnostics.log`. View/export buttons are in the window. Time/zone, nonsecret session ID, capture packet/silence counts, output reports, transitions, route-change detection and media-key dispatch results are included. No PCM/audio, QR, tokens/pins, endpoint names/IDs or track titles are written. Disk failures cannot stop audio; the counter remains visible. See [diagnostics](../docs/DIAGNOSTICS.md). Android 27 reports actual armed/neutral readiness; permission can be turned off even while the phone is locked or disconnected.

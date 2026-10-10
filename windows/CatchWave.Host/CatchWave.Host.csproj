@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
+    <Version>0.1.21</Version><InformationalVersion>0.1.21-armed-diagnostics</InformationalVersion>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>
 </Project>

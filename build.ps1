@@ -16,6 +16,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
     $waveDist = Join-Path $waveProjectRoot 'dist'
     New-Item -ItemType Directory -Force -Path $waveDist | Out-Null
-    Copy-Item -LiteralPath "$waveScratch/app/outputs/apk/release/app-release.apk" -Destination "$waveDist/CatchWave-0.1.20-hold-volume-code25.apk"
-    Get-FileHash -Algorithm SHA256 -LiteralPath "$waveDist/CatchWave-0.1.20-hold-volume-code25.apk"
+    $waveMetadata = Get-Content -LiteralPath "$waveScratch/app/outputs/apk/release/output-metadata.json" -Raw | ConvertFrom-Json
+    $waveElement = $waveMetadata.elements[0]
+    $waveName = "CatchWave-$($waveElement.versionName)-code$($waveElement.versionCode).apk"
+    Copy-Item -LiteralPath "$waveScratch/app/outputs/apk/release/app-release.apk" -Destination (Join-Path $waveDist $waveName)
+    Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $waveDist $waveName)
 } finally { Pop-Location }

@@ -11,7 +11,7 @@ public final class LanAudioActivity extends Activity {
     private final LanState state=LanState.INSTANCE;private final Runnable listener=this::render;
     private LanSettings settings;private TextView status,detail,advanced,sensors,controlStatus,statistics,action;private Button connect,scan,control;
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);settings=new LanSettings(this);state.initialize(settings);
+        super.onCreate(saved);DiagnosticStore.start(this);settings=new LanSettings(this);state.initialize(settings);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(24,16,24,0);setContentView(root);
         root.setOnApplyWindowInsetsListener((view,insets)->{
             android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());
@@ -25,18 +25,20 @@ public final class LanAudioActivity extends Activity {
         scan=new Button(this);scan.setText("Сканировать QR");scan.setOnClickListener(v->{if(!state.started)startActivityForResult(new Intent(this,PairingScanActivity.class),42);});body.addView(scan);
         connect=new Button(this);connect.setOnClickListener(v->{if(state.started)stop();else begin();});body.addView(connect);
         control=new Button(this);control.setOnClickListener(v->{
-            if(effectiveControl()){settings.hostControl(false);refresh();}
+            if(settings.hostControl()){settings.hostControl(false);refresh();}
             else if(state.connected&&state.hostAllowed)new AlertDialog.Builder(this).setTitle("Включить управление хостом?")
                 .setMessage("Жесты play/pause, next и previous будут управлять проигрывателем на вашем ПК.")
                 .setPositiveButton("Включить",(d,w)->{settings.hostControl(true);refresh();}).setNegativeButton("Отмена",null).show();
         });body.addView(control);
         Switch gestures=new Switch(this);gestures.setText("Разрешить жесты");gestures.setChecked(settings.gestures());body.addView(gestures);
         gestures.setOnCheckedChangeListener((button,value)->{settings.prefs.edit().putBoolean("gestures",value).apply();refresh();});
-        TextView guide=new TextView(this);guide.setText("После подключения держите телефон спокойно 1,5 секунды для нейтрали. Медленно наклоните верх телефона вправо/влево примерно на 30° и удерживайте: громкость телефона меняется шагами каждые 0,4 с. Верните в нейтраль, чтобы остановить. Встряхивание или 3 постукивания: play/pause; 4: next; 5: previous; 6: mute/restore телефона. Для команд ПК и регулировки наклоном включите управление на обеих сторонах. Выключение управления сразу прекращает регулировку наклоном.\nПостукивайте легко по корпусу с промежутками 0,2–0,5 с; после серии сделайте паузу 0,7 с. Next/previous зависят от поддержки плеера на ПК.\nЖесты экспериментальны; надёжность и слышимый звук ещё проверяются на устройстве.");body.addView(guide);
+        TextView guide=new TextView(this);guide.setText("Все команды заблокированы до активации. Разрешите управление на обеих сторонах, положите телефон экраном вниз почти горизонтально на 0,85 с, затем поверните на столе примерно на 90° в любую сторону и остановитесь на 0,25 с. Две короткие вибрации: окно управления 10 с. Обычное движение его не продлевает. Возврат экраном вниз к исходному углу или устойчивый переворот экраном вверх блокирует команды.\nПосле активации и после поднятия держите спокойно 1,5 с для свежей нейтрали. Медленно наклоните вправо/влево примерно на 30° и удерживайте: громкость шагами каждые 0,4 с. Возврат в нейтраль останавливает наклон. Встряхивание или 3 постукивания: play/pause; 4: next; 5: previous; 6: mute/restore телефона. Постукивайте с промежутками 0,2–0,5 с, затем пауза 0,7 с.\nЗвук не зависит от блокировки жестов. Выключайте разрешение управления вне намеренного использования. Режим экспериментален; случайные жесты ещё требуют проверки на устройстве.");body.addView(guide);
         Button neutral=new Button(this);neutral.setText("Обновить нейтраль");neutral.setOnClickListener(v->{if(state.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.CALIBRATE));});body.addView(neutral);
         LinearLayout extras=new LinearLayout(this);extras.setOrientation(LinearLayout.VERTICAL);extras.setVisibility(android.view.View.GONE);
         Button more=new Button(this);more.setText("Дополнительно");more.setOnClickListener(v->extras.setVisibility(extras.getVisibility()==android.view.View.GONE?android.view.View.VISIBLE:android.view.View.GONE));body.addView(more);body.addView(extras);
         advanced=new TextView(this);extras.addView(advanced);
+        Button journal=new Button(this);journal.setText("Показать журнал диагностики");journal.setOnClickListener(v->{TextView text=new TextView(this);text.setText(DiagnosticStore.LOG.text());text.setTextIsSelectable(true);ScrollView view=new ScrollView(this);view.addView(text);new AlertDialog.Builder(this).setTitle("Последние 256 событий — без аудио и секретов").setView(view).setPositiveButton("Закрыть",null).show();});extras.addView(journal);
+        Button export=new Button(this);export.setText("Экспорт диагностики");export.setOnClickListener(v->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/plain").putExtra(Intent.EXTRA_TITLE,"CatchWave-diagnostics.txt"),43));extras.addView(export);
         Switch off=new Switch(this);off.setText("Разрешить жесты при выключенном экране");off.setChecked(settings.screenOff());extras.addView(off);
         off.setOnCheckedChangeListener((button,value)->{settings.prefs.edit().putBoolean("screenOff",value).apply();refresh();});
         TextView offGuide=new TextView(this);offGuide.setText("По умолчанию жесты работают, пока CatchWave виден. Режим с выключенным экраном и расход батареи на OnePlus ещё не проверены.");extras.addView(offGuide);
@@ -59,13 +61,13 @@ public final class LanAudioActivity extends Activity {
         if(isFinishing()||status==null)return;
         status.setText(state.status);detail.setText(state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
         connect.setText(state.started?"Отключиться":state.error==LanConnection.Error.NONE?"Подключиться":"Повторить подключение");scan.setEnabled(!state.started);
-        boolean effective=effectiveControl();control.setText(effective?"Выключить управление хостом":"Включить управление хостом");control.setEnabled(state.connected&&state.hostAllowed);
+        boolean effective=effectiveControl();control.setText(settings.hostControl()?"Выключить управление":"Разрешить управление");control.setEnabled(settings.hostControl()||state.connected&&state.hostAllowed);
         String reason=!state.connected?"Нет свежего соединения":!state.hostAllowed?"Управление запрещено в текущем Host на ПК":settings.hostControl()?"Разрешение подтверждено на обеих сторонах":"Включите управление этой кнопкой";
-        controlStatus.setText((effective?"Управление включено":"Управление выключено")+"\n"+reason+(!state.connected&&settings.hostControl()?". Сохранён запрос включения после доверенного подключения":""));
+        controlStatus.setText(state.arming+"\n"+reason+"\n"+state.diagnostic);
         advanced.setText(settings.paired()?settings.host()+":"+settings.port()+"\nSHA-256:\n"+fingerprint():"ПК ещё не сопряжён");
     }
     private String fingerprint(){try{StringBuilder b=new StringBuilder();for(byte v:settings.pin()){if(b.length()>0)b.append(':');b.append(String.format(java.util.Locale.ROOT,"%02x",v&255));}return b.toString();}catch(IllegalArgumentException bad){return "Нужно новое QR-сопряжение";}}
-    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==42){state.initialize(settings);render();}}
+    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==42){state.initialize(settings);render();}if(code==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){try(java.io.OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out!=null)out.write(DiagnosticStore.LOG.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));Toast.makeText(this,"Диагностика сохранена",Toast.LENGTH_SHORT).show();}catch(java.io.IOException|SecurityException failure){Toast.makeText(this,"Не удалось сохранить диагностику",Toast.LENGTH_LONG).show();}}}
     @Override public void onRequestPermissionsResult(int code,String[] p,int[] r){super.onRequestPermissionsResult(code,p,r);if(code==24)begin();}
     @Override protected void onResume(){super.onResume();LanAudioService.uiVisible=true;state.initialize(settings);LanAudioService.maybeAutoStart(this);refresh();}
     @Override protected void onPause(){LanAudioService.uiVisible=MainActivity.visible;refresh();super.onPause();}

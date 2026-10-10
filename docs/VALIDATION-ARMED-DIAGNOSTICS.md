@@ -1,0 +1,11 @@
+# Validation: timed arming and local diagnostics
+
+Android 0.1.21-armed-diagnostics/versionCode 27 adds a relative timed gesture gate and bounded metadata diagnostics. The matching Host adds source/output/route/control metadata and local view/export. The earlier single-device acceptance of version 25 does not validate this new gate or resolve the owner's report of lost sound.
+
+Automated checks use fake sensors/volume/media keys. Coverage includes both turn directions and arbitrary world heading/quaternion sign, stable posture/dwells, wrong angles/motion, fixed expiry, return/face-up stop, repeated pickup requiring neutral, stale/invalid data, permission cycles, all commands including mute while locked, manual neutral invalidation of dequeued commands, stopped/error UI state, bounded journal ordering/restore, clock/disk failures and silent-source versus stopped-stream/focus/route/zero-volume classification. Windows self-tests and Java/.NET TLS/protocol checks use synthetic audio and loopback identities.
+
+Final local release checks: 260 Android unit/Robolectric tests, 0 failures; release lint 0 errors/18 warnings. Windows self-tests: 61 checks plus Java/.NET interoperability. Independent source review is separate from device acceptance. GitHub Actions repeats tests on the published source; it does not exercise a physical phone.
+
+For installation, compare the built APK's package/version/signing certificate and embedded Git commit, preserve a targeted backup of the installed package, and prepare a higher-code rollback with the accepted version-25 runtime. Read back the installed APK and verify its hash instead of trusting only installer output. No app data clear, private preference extraction, permission grants, synthetic gestures or Windows media-key actions are performed by validation. Rollback restores the older continuously active gesture behavior; disable management outside deliberate use.
+
+Open: physical quarter-turn reliability and accidental-input rate, actual audible output during the new pilot, screen-off/OEM/battery behavior, long audio runs/routes, AudioRelay parity and an independent Windows audio endpoint. The new gate is experimental and not production-ready. Host restart requires a new owner scan/confirmation of its local private QR.

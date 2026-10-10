@@ -35,6 +35,7 @@ public class LanConnectionTest {
         assertEquals(LanConnection.Error.PCM_OUTPUT,state.error);assertEquals(LanConnection.Stage.ERROR,state.stage);assertFalse(settings.resume());assertFalse(state.connected);assertFalse(state.hostAllowed);
         assertEquals("PCM_OUTPUT",settings.prefs.getString("lastFailure",""));assertTrue(state.detail.contains("OUTPUT"));
     }
+    @Test public void stopFailureAndResetCannotKeepStaleCountdownOrOutputLabel(){state.arming="Управление: 10 с";state.diagnostic="AudioTrack принимает звук";state.stopped(settings);assertEquals("Выключено",state.arming);assertEquals("Вывод остановлен",state.diagnostic);state.fail(settings,LanConnection.Error.AUDIO_FOCUS_LOST,LanConnection.Stage.STREAMING);assertTrue(state.diagnostic.contains("AUDIO_FOCUS_LOST"));state.reset(settings);assertEquals("Выключено",state.arming);assertEquals("Вывод не запущен",state.diagnostic);}
     @Test public void diagnosticClassifiesFailuresWithoutCopyingPayload(){
         String privatePayload="private endpoint or secret";
         assertEquals(LanConnection.Error.CONNECT_REFUSED,LanFailure.classify(new ConnectException(privatePayload),LanConnection.Stage.TCP));
@@ -47,8 +48,8 @@ public class LanConnectionTest {
         pair();settings.hostControl(true);state.initialize(settings);
         var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
             Activity a=life.get();assertEquals(LanConnection.Stage.SCANNED,state.stage);
-            assertFalse(((Button)field(a,"control")).isEnabled());assertEquals("Включить управление хостом",((Button)field(a,"control")).getText().toString());
-            assertTrue(((TextView)field(a,"controlStatus")).getText().toString().startsWith("Управление выключено"));
+            assertTrue(((Button)field(a,"control")).isEnabled());assertEquals("Выключить управление",((Button)field(a,"control")).getText().toString());
+            assertTrue(((TextView)field(a,"controlStatus")).getText().toString().startsWith("Выключено"));
         }finally{life.destroy();}
     }
     @Test public void livePolicyAndExplicitConfirmationDriveStableActionButton()throws Exception{
@@ -56,8 +57,8 @@ public class LanConnectionTest {
         var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
             Activity a=life.get();Button b=(Button)field(a,"control");assertTrue(b.isEnabled());assertFalse(settings.hostControl());
             b.performClick();assertFalse(settings.hostControl());ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick();Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertTrue(settings.hostControl());assertEquals("Выключить управление хостом",b.getText().toString());
-            b.performClick();assertFalse(settings.hostControl());assertEquals("Включить управление хостом",b.getText().toString());
+            assertTrue(settings.hostControl());assertEquals("Выключить управление",b.getText().toString());
+            b.performClick();assertFalse(settings.hostControl());assertEquals("Разрешить управление",b.getText().toString());
             state.hostAllowed=false;state.changed();Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse(b.isEnabled());assertTrue(((TextView)field(a,"controlStatus")).getText().toString().contains("запрещено"));
         }finally{life.destroy();}
     }

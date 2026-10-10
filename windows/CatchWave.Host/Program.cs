@@ -40,13 +40,13 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
             if(auth.Kind!=0||auth.Body.Length!=32||!CryptographicOperations.FixedTimeEquals(auth.Body,identity.Token)){status?.Failure(HostError.AuthRejected);throw new IOException("Pairing rejected");}
         }}catch(Exception e){if(!outer.IsCancellationRequested)status?.Failure(HostStatus.Classify(e,status.Snapshot.Stage));throw;}
         status?.Stage(HostStage.Authenticated);
-        byte[] session=RandomNumberGenerator.GetBytes(16);var gate=new CommandGate(session);
+        byte[] session=RandomNumberGenerator.GetBytes(16);status?.Log.Session(session);var gate=new CommandGate(session);
         var frames=Channel.CreateBounded<byte[]>(new BoundedChannelOptions(8){FullMode=BoundedChannelFullMode.DropOldest,SingleWriter=true,SingleReader=true});
         var formatReady=new TaskCompletionSource<PcmFormat>(TaskCreationOptions.RunContinuationsAsynchronously);
         var writeLock=new SemaphoreSlim(1);long latest=-1,latestAt=-10000;var clock=Stopwatch.StartNew();
         Task capture=Task.Run(()=>{
             try {
-                using IPcmSource source=synthetic?new SilenceSource():new WasapiSource();formatReady.TrySetResult(source.Format);
+                using IPcmSource source=synthetic?new SilenceSource():new WasapiSource(status?.Log);formatReady.TrySetResult(source.Format);
                 long sequence=0,due=0;
                 while(!lifetime.IsCancellationRequested){
                     long now=clock.ElapsedMilliseconds;
@@ -78,6 +78,7 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
                 HostPermission permissionNow=CurrentPermission();bool valid=gate.Accept(command.Body,Interlocked.Read(ref latest),clock.ElapsedMilliseconds,out long sequence,out byte action,permissionNow.Generation);
                 valid&=clock.ElapsedMilliseconds-Interlocked.Read(ref latestAt)<750;
                 bool accepted=valid&&permissionNow.Enabled&&permissionNow==CurrentPermission()&&(authorizedSink?.Invoke(action,permissionNow)??commandSink?.Invoke(action)??MediaKeys.Send(action));if(accepted)Interlocked.Increment(ref AcceptedCommands);
+                status?.Log.Event("CONTROL",accepted?"ACCEPTED":"REJECTED",action,sequence);
                 byte[] ack=new byte[9];BinaryPrimitives.WriteInt64BigEndian(ack,sequence);ack[8]=accepted?(byte)1:(byte)0;await Write(4,ack);
             }}catch(Exception e){if(!lifetime.IsCancellationRequested)status?.Failure(HostStatus.Classify(e,status.Snapshot.Stage));throw;}});
             await Task.WhenAny(sender,control);lifetime.Cancel();peer.Close();
@@ -105,14 +106,14 @@ internal static class Program {
         Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};var listener=new TcpListener(ip,port);listener.Start(1);
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         var preferences=HostControlSettings.Local();
-        var state=new HostStatus();using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
+        using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
         Task server=Task.Run(async()=>{
             try {while(!stop.IsCancellationRequested){
                 TcpClient peer=await listener.AcceptTcpClientAsync(stop.Token);
                 try {await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,stop.Token);}catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){if(!stop.IsCancellationRequested)state.Failure(HostStatus.Classify(e,state.Snapshot.Stage));}
             }}catch(OperationCanceledException){}finally{listener.Stop();}
         });
-        try{Application.Run(window);}finally{stop.Cancel();server.GetAwaiter().GetResult();}return 0;
+        try{Application.Run(window);}finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();server.GetAwaiter().GetResult();}return 0;
         }catch(ArgumentException){Console.Error.WriteLine("Invalid arguments. Use --help.");return 2;}
     }
 }

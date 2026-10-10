@@ -14,6 +14,7 @@ internal static class SelfTest {
     internal static async Task<int> Run(string? qrFixture=null){
         try {
             checks+=HostUiTest.Run();
+            checks+=DiagnosticTest.Run();
             string preference=Path.Combine(Path.GetTempPath(),"catchwave-selftest-"+Guid.NewGuid().ToString("N")+".json");
             try{var settings=new HostControlSettings(preference);Check(!settings.Load(),"default control disabled");Check(settings.Save(true)&&new HostControlSettings(preference).Load(),"control choice survives restart");Check(settings.Save(false)&&!new HostControlSettings(preference).Load(),"explicit disabled persists");}finally{File.Delete(preference);File.Delete(preference+".tmp");}
             byte[] png=PairingQr.Png(PairingQr.Fixture);Check(png.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}),"QR PNG signature");

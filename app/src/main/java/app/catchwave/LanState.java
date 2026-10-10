@@ -12,6 +12,7 @@ final class LanState {
     volatile LanConnection.Error error=LanConnection.Error.NONE;
     volatile String status=LanConnection.title(stage),detail="Сканируйте QR текущего CatchWave Host.",sensorDetail="Датчики выключены",action="",statistics="Поток не запущен";
     volatile int sensorCode;
+    volatile String arming="Выключено",diagnostic="Вывод не запущен";
     final CopyOnWriteArrayList<Runnable> listeners=new CopyOnWriteArrayList<>();
     private final Handler main=new Handler(Looper.getMainLooper());
     void initialize(LanSettings settings) {
@@ -34,17 +35,19 @@ final class LanState {
         Log.i("CatchWaveLAN","stage="+value.name());changed();
     }
     void reset(LanSettings settings) {
+        arming="Выключено";diagnostic="Вывод не запущен";
         error=LanConnection.Error.NONE;action="";settings.prefs.edit().remove("lastFailure").remove("lastStage").apply();
         connected=false;listening=false;hostAllowed=false;sensorCode=0;sensorDetail="Датчики выключены";statistics="Поток не запущен";transition(settings.paired()?LanConnection.Stage.SCANNED:LanConnection.Stage.DISCONNECTED);
     }
     void fail(LanSettings settings,LanConnection.Error code,LanConnection.Stage at) {
         if(error!=LanConnection.Error.NONE)return;
-        error=code;lastStage=at;stage=LanConnection.Stage.ERROR;connected=false;listening=false;hostAllowed=false;
+        error=code;lastStage=at;stage=LanConnection.Stage.ERROR;connected=false;listening=false;hostAllowed=false;arming="Выключено";diagnostic="Последняя причина: "+code;
         settings.prefs.edit().putBoolean("resume",false).putString("lastFailure",code.name()).putString("lastStage",at.name()).apply();
         status=LanConnection.title(stage);detail=code+" · этап "+at+"\n"+LanConnection.remedy(code);
         Log.w("CatchWaveLAN","error="+code.name()+" stage="+at.name());changed();
     }
     void stopped(LanSettings settings) {
+        arming="Выключено";diagnostic=error==LanConnection.Error.NONE?"Вывод остановлен":("Последняя причина: "+error);
         started=false;connected=false;listening=false;hostAllowed=false;sensorCode=0;sensorDetail="Датчики выключены";
         if(error==LanConnection.Error.NONE){transition(settings.paired()?LanConnection.Stage.SCANNED:LanConnection.Stage.DISCONNECTED);detail="Отключено. Для подключения нажмите кнопку.";}changed();
     }

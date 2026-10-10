@@ -20,8 +20,9 @@ final class LanReceiver implements AutoCloseable {
         default void stage(LanConnection.Stage stage){} default void failed(LanConnection.Error code,LanConnection.Stage stage){}
         default void policy(boolean allowed){} default byte[] report(){return new byte[]{1,0,0,0,0};}
     }
-    private static final class Control {final int action;final long at,epoch,policyEpoch;Control(int action,long epoch,long policyEpoch){this.action=action;this.epoch=epoch;this.policyEpoch=policyEpoch;at=SystemClock.elapsedRealtime();}}
+    private static final class Control {final int action;final long at,epoch,policyEpoch,armEpoch;Control(int action,long epoch,long policyEpoch,long armEpoch){this.action=action;this.epoch=epoch;this.policyEpoch=policyEpoch;this.armEpoch=armEpoch;at=SystemClock.elapsedRealtime();}}
     private final LanSettings settings;private final Listener listener;
+    private final java.util.function.BooleanSupplier authority;private final java.util.function.LongSupplier authorityEpoch;
     private final ArrayBlockingQueue<byte[]> audio=new ArrayBlockingQueue<>(8);
     private final ArrayBlockingQueue<Control> controls=new ArrayBlockingQueue<>(4);
     private final AtomicBoolean active=new AtomicBoolean(true);
@@ -39,12 +40,15 @@ final class LanReceiver implements AutoCloseable {
     private final LanFreshStream stream=new LanFreshStream();
     private volatile LanTimeline timeline;private volatile boolean timelineArmed;
     private final long createdAt=SystemClock.elapsedRealtime();
-    LanReceiver(LanSettings settings,Listener listener){this.settings=settings;this.listener=listener;}
+    LanReceiver(LanSettings settings,Listener listener){this(settings,listener,()->true,()->0);}
+    LanReceiver(LanSettings settings,Listener listener,java.util.function.BooleanSupplier authority,java.util.function.LongSupplier authorityEpoch){this.settings=settings;this.listener=listener;this.authority=authority;this.authorityEpoch=authorityEpoch;}
     boolean fresh(){return active.get()&&format!=null&&latestSequence>=0&&stream.fresh(SystemClock.elapsedRealtime());}
-    void send(int action){if(fresh()&&settings.hostControl()&&hostPolicy)controls.offer(new Control(action,settings.controlEpoch(),policyEpoch));}
+    void send(int action){if(fresh()&&settings.hostControl()&&hostPolicy&&authority.getAsBoolean())controls.offer(new Control(action,settings.controlEpoch(),policyEpoch,authorityEpoch.getAsLong()));}
     boolean commandAllowed(long epoch){return settings.hostControl()&&settings.controlEpoch()==epoch;}
     boolean commandAllowed(long epoch,long generation){return commandAllowed(epoch)&&hostPolicy&&policyEpoch==generation;}
+    boolean commandArmed(long bornRevision){return authority.getAsBoolean()&&bornRevision==authorityEpoch.getAsLong();}
     long policyGeneration(){return policyEpoch;}
+    boolean hostPermitted(){return hostPolicy;}
     boolean localControlAllowed(){synchronized(localControlLock){return fresh()&&commandAllowed(settings.controlEpoch(),policyEpoch);}}
     boolean executeLocalControl(long epoch,long generation,Runnable adjustment){
         synchronized(localControlLock){
@@ -54,8 +58,8 @@ final class LanReceiver implements AutoCloseable {
     }
     void revokePending(){controls.clear();}
     void volume(float value){AudioTrack t=track;if(t!=null)t.setVolume(value);}
-    private void stage(LanConnection.Stage value){stage=value;listener.stage(value);}
-    private void fail(LanConnection.Error code,LanConnection.Stage at){if(active.get()&&failureReported.compareAndSet(false,true))listener.failed(code,at);}
+    private void stage(LanConnection.Stage value){stage=value;DiagnosticStore.LOG.event(DiagnosticLog.Event.STAGE,value.name());listener.stage(value);}
+    private void fail(LanConnection.Error code,LanConnection.Stage at){if(active.get()&&failureReported.compareAndSet(false,true)){DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,code.name(),at.ordinal());listener.failed(code,at);}}
     void policy(byte[] body)throws IOException {
         if(body.length!=9||body[0]<0||body[0]>1)throw new LanFailure.Coded(LanConnection.Error.PROTOCOL);
         boolean allowed;
@@ -85,7 +89,7 @@ final class LanReceiver implements AutoCloseable {
             stage(LanConnection.Stage.AUTH);LanProtocol.write(out,LanProtocol.AUTH,settings.token());
             LanProtocol.Packet initial=LanProtocol.read(in);
             if(initial.kind!=LanProtocol.FORMAT)throw new LanFailure.Coded(LanConnection.Error.AUTH_REJECTED_OR_CLOSED);
-            stage(LanConnection.Stage.AUTHENTICATED);format=new LanProtocol.Format(initial.body);stage(LanConnection.Stage.FORMAT);
+            stage(LanConnection.Stage.AUTHENTICATED);format=new LanProtocol.Format(initial.body);DiagnosticStore.LOG.session(format.session);stage(LanConnection.Stage.FORMAT);
             LanProtocol.Packet hostPolicy=LanProtocol.read(in);
             if(hostPolicy.kind!=LanProtocol.POLICY)throw new LanFailure.Coded(LanConnection.Error.PROTOCOL);policy(hostPolicy.body);
             LanProtocol.AudioGate gate=new LanProtocol.AudioGate();LanProtocol.Packet first=LanProtocol.firstAudio(in,this::policy);gate.accept(first.body,format.bytes());
@@ -105,7 +109,7 @@ final class LanReceiver implements AutoCloseable {
                 }else if(packet.kind==LanProtocol.POLICY){policy(packet.body);
                 }else if(packet.kind==LanProtocol.ACK){
                     if(packet.body.length!=9)throw new IOException("Invalid acknowledgment");
-                    if(ByteBuffer.wrap(packet.body).getLong()==commandSequence)listener.ack(packet.body[8]==1);
+                    if(ByteBuffer.wrap(packet.body).getLong()==commandSequence){DiagnosticStore.LOG.event(DiagnosticLog.Event.ACK,packet.body[8]==1?"ACCEPTED":"REJECTED",commandSequence);listener.ack(packet.body[8]==1);}
                 }else throw new IOException("Unexpected frame");
             }
         }catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);}
@@ -159,11 +163,22 @@ final class LanReceiver implements AutoCloseable {
             long now=SystemClock.elapsedRealtime();
             if(now-reported>=500){byte[] report=Arrays.copyOf(listener.report(),13);report[1]=(byte)outputState;ByteBuffer.wrap(report,5,8).putLong(policyEpoch);LanProtocol.write(out,LanProtocol.CLIENT_STATE,report);reported=now;}
             Control control=controls.poll(250,TimeUnit.MILLISECONDS);if(control==null)continue;
-            if(!fresh()||SystemClock.elapsedRealtime()-control.at>500||!commandAllowed(control.epoch,control.policyEpoch))continue;
+            if(!fresh()||SystemClock.elapsedRealtime()-control.at>500||!commandAllowed(control.epoch,control.policyEpoch)||!commandArmed(control.armEpoch)){DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"QUEUE_REJECTED",control.action);continue;}
+            DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"SENT",control.action,commandSequence+1);
             LanProtocol.write(out,LanProtocol.COMMAND,LanProtocol.command(format.session,++commandSequence,latestSequence,control.action,control.policyEpoch));
         }}catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);close();}
     }
-    public void close(){active.set(false);audio.clear();controls.clear();SSLSocket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
+    public void close(){if(active.getAndSet(false))DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,"RECEIVER_CLOSED",receivedFrames,playedFrames);audio.clear();controls.clear();SSLSocket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
+    private int lastRoute=-2;private long lastDiagnostic=-10000;private boolean focusLost;
+    void focus(int change){focusLost=change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT;DiagnosticStore.LOG.event(DiagnosticLog.Event.FOCUS,focusLost?"LOST":change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK?"DUCK":"GAIN",change);}
+    String diagnostic(int volume){
+        AudioTrack t=track;int type=-1,underruns=-1,play=-1;
+        if(t!=null)try{AudioDeviceInfo route=t.getRoutedDevice();type=route==null?-1:route.getType();underruns=t.getUnderrunCount();play=t.getPlayState();}catch(IllegalStateException ignored){}
+        if(type!=lastRoute){lastRoute=type;DiagnosticStore.LOG.event(DiagnosticLog.Event.ROUTE,type<0?"UNKNOWN":"CHANGED",type);}
+        String code=DiagnosticLog.output(fresh(),outputState==1,volume,focusLost,type);long now=SystemClock.elapsedRealtime();
+        if(now-lastDiagnostic>=2000){lastDiagnostic=now;DiagnosticStore.LOG.event(DiagnosticLog.Event.SNAPSHOT,code,receivedFrames,playedFrames,latestSequence,latestSequence<0?-1:now-lastAudio,queueDrops.get(),underruns,type,volume,play,outputState);}
+        return switch(code){case "STOPPED_STREAM"->"Поток остановлен/устарел";case "FOCUS_LOST"->"Потерян аудиофокус";case "ROUTE_UNKNOWN"->"Выход телефона не подтверждён";case "VOLUME_ZERO"->"Громкость телефона равна нулю";case "SILENT_SOURCE"->"Источник передаёт нулевые PCM-отсчёты";default->"AudioTrack принимает ненулевой PCM; слышимость не подтверждена";};
+    }
     String statistics(){int queued=audio.size();return "Сеанс: "+((SystemClock.elapsedRealtime()-createdAt)/1000)+" с · получено "+receivedFrames+" · записано в AudioTrack "+playedFrames+"\nОчередь PCM в RAM: "+queued+" кадров ("+(queued*20)+" мс) · отброшено "+queueDrops.get()+"\nМакс. интервал прихода: "+maxArrivalGapMs+" мс (не задержка от ПК до динамика)";}
     void dump(PrintWriter out){
         LanProtocol.Format f=format;
