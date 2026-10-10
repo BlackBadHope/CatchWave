@@ -1,6 +1,6 @@
 # Validation: Android 25 and matching Windows Host
 
-This publication uses accepted Android 0.1.20-hold-volume/versionCode 25 runtime sources and the matching Windows Host. It does not publish the owner's signing key, private evidence bundle, live QR or device logs.
+This historical report describes the accepted Android 0.1.20-hold-volume/versionCode 25 runtime sources and the corresponding Windows Host. That publication excluded the owner's signing key, private evidence bundle, live QR and device logs. For current version-27 checks and open physical validation, see [armed diagnostics validation](VALIDATION-ARMED-DIAGNOSTICS.md).
 
 The accepted local build passed **240 Android unit/Robolectric tests**, **0 failures**, and release lint **0 errors/18 warnings**. Coverage includes real decoder fixtures, output-startup receiving, freshness/timeline, policy generations, tilt axes/postures, taps/shake, held timing/hysteresis/direction reversal, neutral/permission/freshness stops, volume limits, stale UI callbacks and mute checkpoint preservation. Service volume tests use a fake device; they do not measure hardware gesture reliability.
 

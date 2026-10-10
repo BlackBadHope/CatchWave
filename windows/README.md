@@ -1,6 +1,6 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host, compatible with Android versionCode 25 here. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
+Portable .NET 9 Windows desktop Host **0.1.21-armed-diagnostics**, matching Android **0.1.21-armed-diagnostics/versionCode 27** source in this tree. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
 
 ## Build
 

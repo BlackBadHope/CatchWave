@@ -2,7 +2,7 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current Android source: **0.1.21-armed-diagnostics, versionCode 27**. The Windows Host in this tree uses the matching authenticated protocol. A OnePlus 12 running Android 16 passed a short owner-operated audio/gesture pilot, including held volume adjustment. This is single-device acceptance; latency, battery life and gesture reliability have not been benchmarked across devices.
+Current Android source: **0.1.21-armed-diagnostics, versionCode 27**. The Windows Host in this tree uses the matching authenticated protocol. The earlier Android versionCode 25 passed a short owner-operated audio/gesture pilot on a OnePlus 12 running Android 16, including held volume adjustment. This earlier single-device acceptance does not validate the new version-27 arming gate; latency, battery life and gesture reliability have not been benchmarked across devices.
 
 **Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 27 adds a timed intent gate, but physical reliability of that gate is still unmeasured. It is not production-ready.
 
