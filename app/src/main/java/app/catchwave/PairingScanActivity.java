@@ -41,7 +41,7 @@ public final class PairingScanActivity extends Activity {
         TextView advanced=CatchWaveUi.text(this,candidate.host+":"+candidate.port+"\nSHA-256:\n"+candidate.fingerprint(),12,CatchWaveUi.MUTED,false);advanced.setVisibility(android.view.View.GONE);
         Button more=CatchWaveUi.button(this,"Параметры подключения",false);more.setOnClickListener(v->advanced.setVisibility(advanced.getVisibility()==android.view.View.GONE?android.view.View.VISIBLE:android.view.View.GONE));CatchWaveUi.add(panel,more,12);CatchWaveUi.add(panel,advanced,8);
         CatchWaveUi.dialog(this).setTitle("CatchWave Host").setView(panel)
-            .setPositiveButton("Подтвердить",(d,w)->{if(!LanState.INSTANCE.started){new LanSettings(this).pair(candidate,trust.isChecked());setResult(RESULT_OK);}finish();})
+            .setPositiveButton("Подключить",(d,w)->{if(!LanState.INSTANCE.started){new LanSettings(this).pair(candidate,trust.isChecked());setResult(RESULT_OK);}finish();})
             .setNegativeButton("Отмена",(d,w)->finish()).setOnCancelListener(d->finish()).show();
     }
     private void retry(){confirming=false;scanner.decodeSingle(result->confirm(result.getText()));if(hasCamera())scanner.resume();}

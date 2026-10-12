@@ -21,6 +21,24 @@ public class LanConnectionTest {
     @After public void cleanup(){state.started=false;state.reset(settings);settings.prefs.edit().clear().commit();Shadows.shadowOf(Looper.getMainLooper()).idle();}
     private void pair(){String zero="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";settings.pair("CW1/192.0.2.1/49372/"+zero+"/"+zero);}
     private Object field(Activity a,String name)throws Exception{Field f=a.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(a);}
+    @Test public void confirmedQrStartsConnectionWithoutSecondButtonAndDoesNotGrantControl(){
+        pair();Shadows.shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS);
+        var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
+            life.get().onActivityResult(42,Activity.RESULT_OK,null);
+            android.content.Intent started=Shadows.shadowOf(life.get()).getNextStartedService();
+            assertNotNull(started);assertEquals(LanAudioService.START,started.getAction());
+            assertEquals(LanAudioService.class.getName(),started.getComponent().getClassName());
+            assertTrue(settings.resume());assertTrue(state.started);assertFalse(settings.hostControl());
+            life.get().onActivityResult(42,Activity.RESULT_OK,null);assertNull(Shadows.shadowOf(life.get()).getNextStartedService());
+        }finally{life.destroy();}
+    }
+    @Test public void cancelledQrAndUnrelatedResultDoNotStartSavedConnection(){
+        pair();var life=Robolectric.buildActivity(LanAudioActivity.class).create();try{
+            life.get().onActivityResult(42,Activity.RESULT_CANCELED,null);
+            life.get().onActivityResult(99,Activity.RESULT_OK,null);
+            assertNull(Shadows.shadowOf(life.get()).getNextStartedService());assertFalse(settings.resume());assertFalse(state.started);
+        }finally{life.destroy();}
+    }
     @Test public void startupDelayDiscardsBacklogThenLiveStallGuardStillWorks(){
         LanTimeline timeline=new LanTimeline(0,1000);
         // Focus+output consumed 800ms while Host kept sending 20ms frames.
