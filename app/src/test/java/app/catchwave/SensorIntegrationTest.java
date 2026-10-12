@@ -58,11 +58,11 @@ public class SensorIntegrationTest {
     @Test public void firstDependenciesInEitherOrderWaitWithoutLocking()throws Exception{
         frame(Sensor.TYPE_GAME_ROTATION_VECTOR,Sensor.TYPE_ACCELEROMETER,Sensor.TYPE_GYROSCOPE);quiet(900);assertTrue(gate.activationReady());assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse(gate.reason().contains("STALE"));
     }
-    @Test public void displayRotationAndOrientationFirstKeepActivationAndRequireNewNeutral()throws Exception{
+    @Test public void displayRotationKeepsNeutralButDropsOldQueuedCommands()throws Exception{
         arm();long revision=gate.revision();
         Shadows.shadowOf(service.getSystemService(WindowManager.class).getDefaultDisplay()).setRotation(1);
         frame(Sensor.TYPE_GAME_ROTATION_VECTOR,Sensor.TYPE_GYROSCOPE,Sensor.TYPE_ACCELEROMETER);
-        assertTrue(gate.reason(),gate.active(SystemClock.elapsedRealtime()));assertFalse(engine.neutralReady(SystemClock.elapsedRealtime()));assertFalse(receiver.commandArmed(revision));
+        assertTrue(gate.reason(),gate.active(SystemClock.elapsedRealtime()));assertTrue(engine.neutralReady(SystemClock.elapsedRealtime()));assertFalse(receiver.commandArmed(revision));
         quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
     }
     @Test public void delayedFirstAccelerationDoesNotEraseOrientationOrResetAgain()throws Exception{
@@ -82,14 +82,14 @@ public class SensorIntegrationTest {
     }
     @Test public void screenViewingAndTableReturnKeepActivationUntilButtonStop()throws Exception{
         arm();pose=new double[]{1,0,0,0};quiet(12000);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
-        pose=new double[]{0,1,0,0};quiet(200);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));
+        pose=new double[]{0,1,0,0};quiet(200);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));assertFalse(engine.tiltAvailable(SystemClock.elapsedRealtime()));
         quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
         service.onStartCommand(new Intent().setAction(LanAudioService.DEACTIVATE),0,9);assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse(LanState.INSTANCE.armed);
         quiet(900);pose=new double[]{0,C,-C,0};quiet(300);assertFalse(gate.active(SystemClock.elapsedRealtime()));
     }
-    @Test public void uprightPickupKeepsActivationButNeedsQuietNeutral()throws Exception{
+    @Test public void uprightPickupKeepsCommandsWhileOnlyTiltRebases()throws Exception{
         arm();pose=new double[]{C,C,0,0};frame();
-        assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));assertEquals("PICKUP_NEUTRAL",gate.reason());
+        assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));assertEquals("ARMED",gate.reason());assertTrue((Boolean)get(engine,"postureRebasing"));
         quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));assertTrue(engine.tiltAvailable(SystemClock.elapsedRealtime()));
     }
     @Test public void rotationDoesNotRecreateForegroundActivity()throws Exception{

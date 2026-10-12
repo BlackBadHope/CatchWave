@@ -147,7 +147,9 @@ public final class LanAudioService extends Service implements SensorEventListene
     }
     private void armTransition(long now){
         feedback.update(arming.active(now),settings.activationSound());
-        if(armRevision==arming.revision())return;armRevision=arming.revision();engine.reset(now,"ARMING_"+arming.reason());if(receiver!=null)receiver.revokePending();
+        if(armRevision==arming.revision())return;armRevision=arming.revision();
+        if("DISPLAY_NEUTRAL".equals(arming.reason()))engine.clearPendingGestures(now);else engine.reset(now,"ARMING_"+arming.reason());
+        if(receiver!=null)receiver.revokePending();
         DiagnosticStore.LOG.event(DiagnosticLog.Event.ARMING,arming.reason(),arming.active(now)?1:0);
         if("ARMED".equals(arming.reason()))try{Vibrator vibrator=getSystemService(Vibrator.class);if(vibrator!=null&&vibrator.hasVibrator())vibrator.vibrate(VibrationEffect.createWaveform(new long[]{0,45,90,45},-1));}catch(RuntimeException ignored){}
     }

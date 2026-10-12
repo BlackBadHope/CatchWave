@@ -75,7 +75,7 @@ final class LanAudioView extends ScrollView {
         control=button("Разрешить управление",false);addTo(help,control,12);
         neutral=button("Сбросить активацию и нейтраль",false);addTo(help,neutral,8);
         off=setting(help,"Жесты с выключенным экраном","Дополнительный расход батареи",R.drawable.ic_lan_touch_app);
-        TextView toneHelp=text("Поднятие и просмотр экрана сохраняют режим. При смене положения держите телефон спокойно 1,5 с. Тон вверх — включение, вниз — выключение. Сигналы используют громкость медиа.",13,MUTED,false);
+        TextView toneHelp=text("Поднятие и просмотр экрана сохраняют режим и постукивания. После включения нужна одна спокойная настройка на 1,5 с. При смене позы обновляется только направление наклонов. Тон вверх — включение, вниз — выключение. Сигналы используют громкость медиа.",13,MUTED,false);
         toneHelp.setLineSpacing(dp(3),1);addTo(help,toneHelp,8);
 
         diagnostics=column();diagnostics.setVisibility(GONE);disclosure(body,"Диагностика",R.drawable.ic_lan_graphic_eq,diagnostics);

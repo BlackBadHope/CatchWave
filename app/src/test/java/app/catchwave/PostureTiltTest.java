@@ -32,19 +32,37 @@ public class PostureTiltTest {
         r.move(0,-.55,500);r.quiet(900);assertEquals(2,r.actions.size());
         int before=r.actions.size();move(r,faceUp(-1.05));r.quiet(4000);
         assertEquals(before,r.actions.size());
-        assertTrue(r.dump().contains("resetCause=POSTURE_CHANGE"));
+        assertTrue(r.dump().contains("postureRebases=1"));
         double[] table=faceUp(-1.05),axis=PhysicalGestureTest.axis(table,0);
         move(r,PhysicalGestureTest.turn(table,axis,.55));r.quiet(1000);
         assertTrue(r.actions.size()>before);
         assertEquals(GestureEngine.Action.VOLUME_UP,r.actions.get(r.actions.size()-1));
     }
-    @Test public void returningUprightNeedsFreshNeutralThenHeldTiltStillRepeats(){
+    @Test public void returningUprightRebasesOnlyTiltWithoutBlockingOtherCommands(){
         PhysicalGestureTest.Rig r=new PhysicalGestureTest.Rig(0,Math.PI/2);
         move(r,faceUp(1.05));r.quiet(1800);move(r,r.neutral);
-        assertFalse(r.e.neutralReady(r.now));r.quiet(1800);
+        assertTrue(r.e.neutralReady(r.now));assertFalse(r.e.tiltAvailable(r.now));r.quiet(400);
         assertTrue(r.e.neutralReady(r.now));assertTrue(r.actions.isEmpty());
         r.move(0,.55,500);r.quiet(1800);
         assertEquals(4,r.actions.size());
         assertTrue(r.actions.stream().allMatch(a->a==GestureEngine.Action.VOLUME_UP));
+    }
+    @Test public void pickupKeepsTapCommandsAvailableDuringMovement(){
+        PhysicalGestureTest.Rig r=new PhysicalGestureTest.Rig(0,0);
+        for(int i=1;i<=100;i++){
+            double angle=(Math.PI/2)*i/100;
+            r.pose=PhysicalGestureTest.neutral(0,angle);r.gyro=Math.PI/2;r.sample(0);
+            assertTrue("pickup at sample "+i,r.e.neutralReady(r.now));
+        }
+        assertFalse(r.e.tiltAvailable(r.now));assertTrue(r.actions.isEmpty());
+        r.gyro=.7;r.quiet(150);r.taps(3,200);r.quiet(700);
+        assertEquals(r.dump(),java.util.List.of(GestureEngine.Action.PLAY_PAUSE),r.actions);
+        r.gyro=0;r.quiet(400);assertTrue(r.e.tiltAvailable(r.now));
+    }
+    @Test public void faceDownReturnCannotRunVolumeToZero(){
+        PhysicalGestureTest.Rig r=new PhysicalGestureTest.Rig(0,Math.PI/2);
+        move(r,new double[]{0,1,0,0});r.quiet(20000);
+        assertTrue(r.actions.isEmpty());assertTrue(r.e.neutralReady(r.now));
+        assertTrue(r.dump().contains("flatTiltBlocked=true"));
     }
 }
