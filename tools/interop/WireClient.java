@@ -115,11 +115,9 @@ public final class WireClient {
             reader.start();
             try {
                 Thread.sleep(800);
+                // same freshness gate used by Android's delayed main focus callback.
                 require(fresh.fresh(System.nanoTime() / 1000000));
-                require(
-                        dropped.get()
-                                >= 25); // same freshness gate used by Android's delayed main focus
-                                        // callback.
+                require(dropped.get() >= 25);
                 long deadline = began + 3000;
                 byte[] frame;
                 do {
