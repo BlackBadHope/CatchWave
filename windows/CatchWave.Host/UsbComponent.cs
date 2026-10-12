@@ -6,6 +6,14 @@ namespace CatchWave.Host;
 
 /** Explicit owner setup only; never invoked by Host startup or network discovery. */
 internal static class UsbComponent {
+    internal static async Task BindAccessory(UsbAccessory.Phone selected,CancellationToken token){
+        token.ThrowIfCancellationRequested();string instance=WinUsbBulkStream.ResolveInstance(selected);
+        string serial=selected.Info.Id.Instance;if(!System.Text.RegularExpressions.Regex.IsMatch(serial,"^[A-Za-z0-9&_.-]{1,200}$"))throw new IOException("USB_INSTANCE_INVALID");
+        var start=new ProcessStartInfo{FileName=Path.Combine(AppContext.BaseDirectory,"CatchWave.Host.exe"),UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden};
+        start.ArgumentList.Add("--usb-setup");start.ArgumentList.Add("install");start.ArgumentList.Add(instance);start.ArgumentList.Add(serial);
+        try {using var process=Process.Start(start)??throw new IOException("USB_BINDING_FAILED");await process.WaitForExitAsync(token);if(process.ExitCode!=0)throw new IOException("USB_BINDING_FAILED");}
+        catch(System.ComponentModel.Win32Exception e){throw new IOException(e.NativeErrorCode==1223?"USB_SETUP_CANCELLED":"USB_BINDING_FAILED");}
+    }
     internal static async Task Install(){
         using var existing=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\UsbDk");
         if(existing!=null)throw new IOException("USB_COMPONENT_ALREADY_INSTALLED");

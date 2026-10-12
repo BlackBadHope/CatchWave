@@ -112,6 +112,7 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
 internal static class Program {
     [STAThread]
     internal static int Main(string[] args){
+        if(args.Length==4&&args[0]=="--usb-setup")return UsbWinUsbSetup.Run(args[1..]);
         if(args.Length==2&&args[0]=="--usb-probe"){
             try{var selected=UsbAccessory.Phones().Single(p=>p.Info.Id.Instance.Equals(args[1],StringComparison.OrdinalIgnoreCase));using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(20));
                 using var pipe=Task.Run(()=>UsbAccessory.Open(selected,deadline.Token,(code,values)=>Console.WriteLine(code+" "+string.Join(' ',values)))).GetAwaiter().GetResult();Console.WriteLine("USB_ACCESSORY_READY");Task.Delay(2000,deadline.Token).GetAwaiter().GetResult();return 0;

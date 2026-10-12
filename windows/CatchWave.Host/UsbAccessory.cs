@@ -88,15 +88,10 @@ internal static class UsbAccessory {
             phone=next??throw new IOException("USB_AOA_REENUMERATION_TIMEOUT");
             progress?.Invoke("USB_ACCESSORY_ENUMERATED");
         }
-        var request=new ConfigRequest{Id=phone.Info.Id};
-        if(!Native.Config(ref request,out nint descriptor,out uint length))throw new IOException("USB_CONFIG_FAILED");
-        (byte input,byte output) endpoints;
-        try {if(length>65535||length<9)throw new IOException("USB_CONFIG_INVALID");byte[] bytes=new byte[length];Marshal.Copy(descriptor,bytes,0,bytes.Length);endpoints=Endpoints(bytes);}
-        finally{Native.ReleaseConfig(descriptor);}
-        stop.ThrowIfCancellationRequested();var opened=new Device(phone.Info.Id,progress);
-        progress?.Invoke("USB_ACCESSORY_OPENED");
-        if(stop.IsCancellationRequested){opened.Dispose();stop.ThrowIfCancellationRequested();}
-        return new BulkStream(opened,endpoints.input,endpoints.output);
+        var winUsbData=WinUsbBulkStream.TryOpen(phone,stop,progress);if(winUsbData!=null)return winUsbData;
+        progress?.Invoke("USB_SIGNED_BINDING_REQUIRED");await UsbComponent.BindAccessory(phone,stop);
+        winUsbData=WinUsbBulkStream.TryOpen(phone,stop,progress);if(winUsbData!=null)return winUsbData;
+        throw new IOException("USB_BINDING_RESTART_REQUIRED");
     }
     internal static (byte input,byte output) Endpoints(byte[] descriptor){
         if(descriptor.Length<9||descriptor[0]!=9||descriptor[1]!=2||BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(2))!=descriptor.Length)throw new IOException("USB_CONFIG_INVALID");
