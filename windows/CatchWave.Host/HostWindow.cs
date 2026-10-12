@@ -27,6 +27,8 @@ internal sealed class HostWindow:Form {
     private readonly PictureBox picture=new(),guide=new();
     private readonly Panel pairing=new(),diagnostics=new(),commands=new(),content=new();
     private readonly Button network=Button("");
+    // Windows still uses a dropdown after Closed fires. Keep it alive until the form is disposed.
+    private readonly ContextMenuStrip networkMenu=new();
     private readonly Label privacy=Label(9);
     private readonly Button pairAction=Button(""),diagnosticAction=Button("Диагностика");
     private readonly Label details=Label(10);
@@ -63,7 +65,8 @@ internal sealed class HostWindow:Form {
         var columns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty,BackColor=Surface};
         columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,350));
         page.Controls.Add(columns,0,1);
-        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=Padding.Empty,AutoScroll=true,BackColor=HostCard.Fill};
+        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=Padding.Empty,BackColor=HostCard.Fill};
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,70));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
@@ -71,20 +74,21 @@ internal sealed class HostWindow:Form {
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,66));
         left.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
+        connection.AutoSize=false;connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
         var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Подключение к телефону";
-        var sourcePanel=new Panel{Dock=DockStyle.Fill};source.Dock=DockStyle.Top;
+        var sourcePanel=new Panel{Dock=DockStyle.Fill};source.AutoSize=false;source.Height=24;source.Dock=DockStyle.Top;
         network.Dock=DockStyle.Bottom;network.Text=new HostEndpoint(address,"Current").ToString();
         network.AccessibleName="Подключение через USB-модем или локальную сеть";
         sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(network);left.Controls.Add(sourcePanel,0,1);
-        controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
+        controlStatus.AutoSize=false;controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
         guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;guide.BackColor=Color.Transparent;
         using(var asset=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.tilt.png")!){using var img=Image.FromStream(asset);guide.Image=new Bitmap(img);assets.Add(guide.Image);}
         left.Controls.Add(guide,0,3);
         control.Dock=DockStyle.Fill;left.Controls.Add(control,0,4);
-        controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,5);
+        controlHint.AutoSize=false;controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,5);
         var warning=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};
-        saving.MaximumSize=new Size(480,0);reason.MaximumSize=new Size(480,0);warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,6);
+        warning.SizeChanged+=(_,_)=>{saving.MaximumSize=reason.MaximumSize=new Size(Math.Max(1,warning.ClientSize.Width-24),0);};
+        warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,6);
         var leftCard=new HostCard{Dock=DockStyle.Fill,Margin=new Padding(0,8,20,0)};leftCard.Controls.Add(left);columns.Controls.Add(leftCard,0,0);
 
         var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=Padding.Empty,BackColor=HostCard.Fill};
@@ -193,9 +197,17 @@ internal sealed class HostWindow:Form {
     internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
     internal void ConfigureNetworks(HostEndpoint current,Func<HostEndpoint,Task> select,Func<string,string> pairCode,Func<IReadOnlyList<HostEndpoint>> available,int port){
         network.Text=current.ToString();
+        networkMenu.BackColor=Surface;networkMenu.ForeColor=TextColor;networkMenu.Font=Font;
         network.Click+=(_,_)=>{
-            var menu=new ContextMenuStrip{BackColor=Surface,ForeColor=TextColor,Font=Font};
-            foreach(var next in available()){
+            if(!network.Enabled)return;
+            network.Enabled=false;IReadOnlyList<HostEndpoint> choices;
+            try{choices=available();}
+            catch(System.Net.NetworkInformation.NetworkInformationException){if(!IsDisposed)MessageBox.Show(this,"Не удалось прочитать подключения. Повторите попытку.","CatchWave");return;}
+            finally{if(!IsDisposed)network.Enabled=true;}
+            if(IsDisposed)return;
+            var menu=networkMenu;
+            foreach(ToolStripItem item in menu.Items.Cast<ToolStripItem>().ToArray()){menu.Items.Remove(item);item.Dispose();}
+            foreach(var next in choices){
                 var item=new ToolStripMenuItem(next.ToString()){Checked=next.Address==current.Address};
                 item.Click+=async(_,_)=>{
                     if(next.Address==current.Address)return;
@@ -210,7 +222,7 @@ internal sealed class HostWindow:Form {
                 };menu.Items.Add(item);
             }
             if(menu.Items.Count==0)menu.Items.Add(new ToolStripMenuItem("Подключите USB-модем или локальную сеть"){Enabled=false});
-            menu.Closed+=(_,_)=>menu.Dispose();menu.Show(network,new Point(0,network.Height));
+            menu.Show(network,new Point(0,network.Height));
         };
     }
     internal void AssertLayout(){
@@ -218,7 +230,8 @@ internal sealed class HostWindow:Form {
         if(pairing.Parent!=diagnostics.Parent||pairing.Parent!=commands.Parent||pairing.Parent is TableLayoutPanel)throw new Exception("Content panels must share one overlay container");
         if(pairing.Visible&&(privacy.Height<privacy.GetPreferredSize(new Size(privacy.Width,0)).Height||picture.Height<picture.Image!.Height||picture.Width<picture.Image.Width))throw new Exception("QR or privacy text clipped");
         if(phone.Bottom>phone.Parent!.ClientSize.Height||diagnosticAction.Bottom>diagnosticAction.Parent!.ClientSize.Height)throw new Exception("Right column overflow");
+        foreach(Control item in new Control[]{connection,controlStatus,controlHint,control,network})if(item.Right>item.Parent!.ClientSize.Width||item.Bottom>item.Parent.ClientSize.Height)throw new Exception("Main control clipped: "+item.GetType().Name);
     }
     internal Bitmap RenderClient(){using var contentBitmap=new Bitmap(Controls[0].Width,Controls[0].Height);Controls[0].DrawToBitmap(contentBitmap,new Rectangle(Point.Empty,Controls[0].Size));var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height);using var graphics=Graphics.FromImage(bitmap);graphics.Clear(Surface);graphics.DrawImageUnscaled(contentBitmap,Controls[0].Location);return bitmap;}
-    protected override void Dispose(bool disposing){if(disposing){timer.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing){timer.Dispose();networkMenu.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
 }

@@ -26,6 +26,15 @@ internal static class HostUiTest {
         var warning=(Label)typeof(HostWindow).GetField("saving",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(failedSave)!;Check(warning.Text.Contains("Выключение не сохранено")&&!failedSave.MediaEnabled);
         status.Listening();form.Render();form.ShowInTaskbar=false;form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-32000,-32000);form.Show();
         foreach(var size in new[]{new Size(980,730),new Size(1000,730),new Size(1100,760),new Size(1920,1008)}){form.ClientSize=size;form.PerformLayout();Application.DoEvents();form.AssertLayout();checks++;}
+        form.ConfigureNetworks(new HostEndpoint("127.0.0.1","Test"),_=>Task.CompletedTask,_=>PairingQr.Fixture,()=>new[]{new HostEndpoint("127.0.0.1","Test")},49372);
+        var network=(Button)typeof(HostWindow).GetField("network",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        var menu=(ContextMenuStrip)typeof(HostWindow).GetField("networkMenu",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        for(int i=0;i<4;i++){
+            network.PerformClick();Application.DoEvents();
+            Check(menu.IsHandleCreated&&!menu.IsDisposed&&menu.Items.Count==1);
+            menu.Close(ToolStripDropDownCloseReason.AppClicked);Application.DoEvents();
+            Check(!menu.IsDisposed&&form.Visible);
+        }
         form.Close();
     }catch(Exception e){failure=e;}});thread.SetApartmentState(ApartmentState.STA);thread.Start();if(!thread.Join(TimeSpan.FromSeconds(5)))throw new Exception("UI test timed out");if(failure!=null)throw failure;return checks;}
 }
