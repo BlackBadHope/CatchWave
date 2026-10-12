@@ -5,7 +5,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>CatchWave.ico</ApplicationIcon>
-    <Version>0.1.37</Version><InformationalVersion>0.1.37-usb-diagnostics</InformationalVersion>
+    <Version>0.1.38</Version><InformationalVersion>0.1.38-usb-winusb</InformationalVersion>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../app/src/main/res/drawable-nodpi/lan_tilt_guide.png" LogicalName="CatchWave.Host.tilt.png" /></ItemGroup>

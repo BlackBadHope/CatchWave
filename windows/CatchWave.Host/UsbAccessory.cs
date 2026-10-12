@@ -69,12 +69,17 @@ internal static class UsbAccessory {
             // StopRedirect resets the selected USB port. Keep the negotiation handle until the
             // old device has disappeared and the accessory identity is actually enumerated.
             progress?.Invoke("USB_SELECTED_PHONE",phone.Info.Descriptor.Vendor,phone.Info.Descriptor.Product,unchecked((long)phone.Info.Port));
-            using var device=new Device(phone.Info.Id,progress);progress?.Invoke("USB_NEGOTIATION_OPEN");
+            bool winUsb;
+            try{winUsb=WinUsbNegotiator.TryStart(phone,stop,progress);}
+            catch(Exception e)when(e is UnauthorizedAccessException or System.Security.SecurityException){progress?.Invoke("USB_WINUSB_REGISTRY_UNAVAILABLE");winUsb=false;}
+            using var device=winUsb?null:new Device(phone.Info.Id,progress);
+            if(device!=null){progress?.Invoke("USB_NEGOTIATION_OPEN");
                 byte[] protocol=await Task.Run(()=>Control(device,0xc0,51,0,2,null,stop),stop);
                 if(protocol.Length!=2||BinaryPrimitives.ReadUInt16LittleEndian(protocol)<1)throw new IOException("USB_AOA_UNSUPPORTED");
                 string[] identity={"CatchWave","CatchWave Host","PC audio and optional media control","1","https://github.com/BlackBadHope/CatchWave","CW-local"};
                 for(ushort i=0;i<identity.Length;i++){byte[] text=Encoding.UTF8.GetBytes(identity[i]+"\0");await Task.Run(()=>Control(device,0x40,52,i,0,text,stop),stop);}
                 await Task.Run(()=>Control(device,0x40,53,0,0,null,stop),stop);progress?.Invoke("USB_AOA_START_SENT");
+            }else progress?.Invoke("USB_AOA_START_SENT");
             // Protocol re-enumeration, bounded to eight seconds; topology must remain the selected port.
             var deadline=DateTime.UtcNow.AddSeconds(8);Phone? next=null;
             while(DateTime.UtcNow<deadline){stop.ThrowIfCancellationRequested();next=Phones().SingleOrDefault(p=>p.Accessory&&p.Info.Filter==phone.Info.Filter&&p.Info.Port==phone.Info.Port);

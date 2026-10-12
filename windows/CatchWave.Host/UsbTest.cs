@@ -17,6 +17,8 @@ internal static class UsbTest {
         if(Marshal.SizeOf(transfer)!=72||Marshal.OffsetOf(transfer,"Bytes")!=48)throw new Exception("UsbDk transfer ABI");checks++;
         if(UsbAccessory.TransferError(true,0x80000300,2,10)!="USB_NATIVE_INVALID_PARAMETER"||UsbAccessory.TransferError(true,0xffffffff80000300,2,10)!="USB_NATIVE_INVALID_PARAMETER")throw new Exception("Signed native status must preserve the invalid-parameter cause");checks++;
         if(UsbAccessory.TransferError(true,0,19,18)!="USB_TRANSFER_BOUNDS"||UsbAccessory.TransferError(false,0,2,10)!="USB_TRANSFER_FAILED"||UsbAccessory.TransferError(true,0,2,10)!=null)throw new Exception("USB completion contract");checks++;
+        if(Marshal.SizeOf<WinUsbNegotiator.SetupPacket>()!=8)throw new Exception("WinUSB setup ABI");checks++;
+        if(!WinUsbNegotiator.PathMatches(@"\\?\usb#vid_22d9&pid_2769#phone-one#{00000000-0000-0000-0000-000000000000}",@"USB\VID_22D9&PID_2769","PHONE-ONE")||WinUsbNegotiator.PathMatches(@"\\?\usb#vid_22d9&pid_2769#phone-two#{00000000-0000-0000-0000-000000000000}",@"USB\VID_22D9&PID_2769","PHONE-ONE")||WinUsbNegotiator.PathMatches(@"\\?\usb#vid_1234&pid_2769#phone-one#{00000000-0000-0000-0000-000000000000}",@"USB\VID_22D9&PID_2769","PHONE-ONE"))throw new Exception("WinUSB must bind the selected hardware and instance");checks++;
         return checks;
     }
 }
