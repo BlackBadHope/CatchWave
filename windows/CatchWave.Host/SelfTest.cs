@@ -41,6 +41,7 @@ internal static class SelfTest {
             Check(decoded.Kind==2&&decoded.Body.Length==3856&&BinaryPrimitives.ReadInt64BigEndian(decoded.Body)==7,"wire frame");
             await using var bad=new MemoryStream(new byte[]{2,0,1,0,0});try{await Protocol.Read(bad,CancellationToken.None);throw new Exception("oversize allowed");}catch(IOException){checks++;}
             using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));using var identity=new HostIdentity();
+            await FramePublication(identity,200,true);await FramePublication(identity,1000,false);
             await Session(identity,false,deadline.Token);await Session(identity,true,deadline.Token);
             var status=new HostStatus();status.Begin();status.Stage(HostStage.Authenticated);status.Frame(0,true);
             Check(!status.Snapshot.Effective(true),"sent PCM without phone output is not effective control");
@@ -51,6 +52,31 @@ internal static class SelfTest {
             try{status.Client(Protocol.ClientState(1,8,true,true));throw new Exception("invalid state accepted");}catch(IOException){checks++;}
             Console.WriteLine($"PASS: {checks} checks; loopback TLS + synthetic PCM; WASAPI capture, media key input, LAN and phone untouched.");return 0;
         }catch(Exception e){Console.Error.WriteLine("FAIL: "+e.GetBaseException().Message);return 1;}
+    }
+    private static async Task FramePublication(HostIdentity identity,int delay,bool accept){
+        using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(6));var token=stop.Token;
+        var listener=new TcpListener(IPAddress.Loopback,0);listener.Start(1);
+        var written=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var decision=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);int first=0;
+        var arrived=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task server=Task.Run(async()=>{using var peer=await listener.AcceptTcpClientAsync(token);try{
+            await new HostSession(identity,true,true,_=>true,audioWriteBarrier:async()=>{
+                if(Interlocked.Increment(ref first)==1){written.TrySetResult();await release.Task.WaitAsync(token);}
+            },commandDecision:value=>decision.TrySetResult(value),commandArrived:()=>arrived.TrySetResult()).Run(peer,token);
+        }catch(IOException){}catch(OperationCanceledException){};});
+        try{
+            using var client=new TcpClient();await client.ConnectAsync(IPAddress.Loopback,((IPEndPoint)listener.LocalEndpoint).Port,token);
+            using var tls=new SslStream(client.GetStream(),false,(_,cert,_,_)=>cert!=null&&CryptographicOperations.FixedTimeEquals(SHA256.HashData(cert.GetRawCertData()),SHA256.HashData(identity.Certificate.RawData)));
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions{TargetHost="CatchWave",EnabledSslProtocols=SslProtocols.Tls12},token);
+            await Protocol.Write(tls,0,identity.Token,token);Packet format=await Protocol.Read(tls,token);await Protocol.Read(tls,token);Packet audio=await Protocol.Read(tls,token);await written.Task.WaitAsync(token);
+            await Protocol.Write(tls,3,Command(format.Body[..16],1,BinaryPrimitives.ReadInt64BigEndian(audio.Body),1),token);
+            await arrived.Task.WaitAsync(token);await Task.WhenAny(decision.Task,Task.Delay(delay,token));
+            Check(!decision.Task.IsCompleted,"command must wait for completed audio publication, not reject a frame already read by peer");
+            release.TrySetResult();Packet ack;do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);
+            Check(ack.Kind==4&&ack.Body[8]==(accept?1:0),accept?"immediate command after audio publication accepted":"command delayed beyond 500 ms cannot execute after recovery");
+            client.Close();await server.WaitAsync(token);
+        }finally{release.TrySetResult();stop.Cancel();listener.Stop();try{await server.WaitAsync(TimeSpan.FromSeconds(1));}catch{};}
     }
     private static async Task Session(HostIdentity identity,bool correct,CancellationToken token){
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start(1);

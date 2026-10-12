@@ -32,6 +32,11 @@ public class LanServiceBoundaryTest {
     @Test public void queuedStartIsCancelledWhenResumeWasDisabled()throws Exception{
         settings.prefs.edit().putBoolean("resume",false).apply();blocked();
     }
+    @Test public void staleRefreshAfterDisconnectCannotKeepServiceStarted(){
+        settings.prefs.edit().putBoolean("resume",false).apply();
+        assertEquals(Service.START_NOT_STICKY,service.onStartCommand(new Intent().setAction(LanAudioService.REFRESH),0,1));
+        assertTrue(Shadows.shadowOf(service).isStoppedBySelf());
+    }
     @Test public void syncSessionBlocksLanBeforeNetworkAndAudioFocus()throws Exception{
         SessionModel.INSTANCE.running=true;blocked();
     }

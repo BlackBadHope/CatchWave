@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType><TargetFramework>net9.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
-    <Version>0.1.21</Version><InformationalVersion>0.1.21-armed-diagnostics</InformationalVersion>
+    <ApplicationIcon>CatchWave.ico</ApplicationIcon>
+    <Version>0.1.31</Version><InformationalVersion>0.1.31-desktop</InformationalVersion>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../app/src/main/res/drawable-nodpi/lan_tilt_guide.png" LogicalName="CatchWave.Host.tilt.png" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="CatchWave.ico" LogicalName="CatchWave.Host.brand.ico" /></ItemGroup>
 </Project>

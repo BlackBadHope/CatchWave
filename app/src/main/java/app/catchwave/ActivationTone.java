@@ -27,8 +27,9 @@ final class ActivationTone implements AutoCloseable {
                 track=new AudioTrack.Builder().setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
                     .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                     .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.length*2).build();
-                if(track.getState()!=AudioTrack.STATE_INITIALIZED||track.write(pcm,0,pcm.length)!=pcm.length)throw new IllegalStateException();
-                track.play();Thread.sleep(DURATION_MS+30);
+                // MODE_STATIC is successfully created in STATE_NO_STATIC_DATA until PCM is loaded.
+                if(track.write(pcm,0,pcm.length)!=pcm.length||track.getState()!=AudioTrack.STATE_INITIALIZED)throw new IllegalStateException();
+                track.play();DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"TONE_STARTED",entering?1:0);Thread.sleep(DURATION_MS+30);
             }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
             catch(RuntimeException failure){DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"TONE_FAILED");}
             finally {if(track!=null)try{track.release();}catch(RuntimeException ignored){}}

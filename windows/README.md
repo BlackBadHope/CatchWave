@@ -1,6 +1,6 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.21-armed-diagnostics**, compatible with Android **0.1.22-arming-feedback/versionCode 29** source in this tree; no protocol or Host runtime change is required. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
+Portable .NET 9 Windows desktop Host **0.1.31-desktop**, compatible with Android **0.1.31-unified-ui/versionCode 49** source in this tree; no protocol or Host runtime change is required. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
 
 ## Build
 
@@ -16,12 +16,12 @@ Output: `%TEMP%/CatchWave-public25-host-build/bin/`. Keep all produced files tog
 ## Run and pair
 
 ```powershell
-CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372
+CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372 --enable-media-keys
 ```
 
 Use an explicit local IPv4 address on a trusted LAN. No automatic firewall changes occur. If Windows asks for access, the owner chooses the intended private network. Scan the local QR in CatchWave and confirm. QR/CW1 contains a private token and pin: do not post, screenshot, log or pass it through ADB. The certificate is generated for the Host process and disposed on exit; no certificate trust entry is installed. Restarting requires fresh pairing.
 
-PC control starts OFF. Its owner-approved boolean is stored in `%LOCALAPPDATA%/CatchWave/host-control21.json`; no pairing token is stored there. Enable control on both sides. Revocation and key dispatch share a lock; policy generations reject older permission states. Dashboard phone output/sensor reports are authenticated counters, not measurements of audible sound.
+The documented launch command enables PC permission at startup. Without the override, the saved owner choice is used (OFF for a fresh preference file). Its owner-approved boolean is stored in `%LOCALAPPDATA%/CatchWave/host-control21.json`; no pairing token is stored there. Enable control on both sides. Revocation and key dispatch share a lock; policy generations reject older permission states. Dashboard phone output/sensor reports are authenticated counters, not measurements of audible sound.
 
 `--synthetic --disable-media-keys` sends zero PCM with no WASAPI capture and force-disabled Windows keys. It still creates an Android audio receiver and may take audio focus. `--enable-media-keys` is an explicit session override; normal use should use owner approval controls. No service, autostart, discovery, internet relay or firewall installer is included. Closing the Host window stops its listener and ends the session.
 
@@ -35,4 +35,10 @@ One OnePlus 12 manual pilot accepted audio/gestures. Screen-off battery behavior
 
 ## Local diagnostics
 
-The Host keeps the last 256 metadata events under local application data in `CatchWave/diagnostics.log`. View/export buttons are in the window. Time/zone, nonsecret session ID, capture packet/silence counts, output reports, transitions, route-change detection and media-key dispatch results are included. No PCM/audio, QR, tokens/pins, endpoint names/IDs or track titles are written. Disk failures cannot stop audio; the counter remains visible. See [diagnostics](../docs/DIAGNOSTICS.md). Android 29 reports actual armed/neutral readiness; permission can be turned off even while the phone is locked or disconnected.
+The Host keeps the last 256 metadata events under local application data in `CatchWave/diagnostics.log`. View/export buttons are in the window. Time/zone, nonsecret session ID, capture packet/silence counts, output reports, transitions, route-change detection and media-key dispatch results are included. No PCM/audio, QR, tokens/pins, endpoint names/IDs or track titles are written. Disk failures cannot stop audio; the counter remains visible. See [diagnostics](../docs/DIAGNOSTICS.md). Android reports actual button activation and neutral readiness; permission can be turned off even while the phone is locked or disconnected.
+
+## Desktop interface
+
+The native dark window shows connection/audio state and the independent control permission. A live session hides its private pairing QR; **Подключить телефон** shows it again. **Диагностика** opens the counters, certificate information, bounded journal and export. Receiving frames is not proof of audibility. A saved-permission write failure remains visible in the main window.
+
+The app opens without a console window. For terminal diagnostics use `dotnet CatchWave.Host.dll --help` or `dotnet CatchWave.Host.dll --self-test`. `dotnet CatchWave.Host.dll --ui-preview <directory>` renders the actual WinForms controls using an inert public QR fixture. Preview mode has no listener, WASAPI capture, real keys or saved preferences; its images are safe examples, not physical acceptance.

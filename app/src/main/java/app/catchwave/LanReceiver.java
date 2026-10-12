@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.*;
 
 /** One explicitly paired TLS session. No discovery, reconnect or disk audio. */
@@ -26,10 +27,12 @@ final class LanReceiver implements AutoCloseable {
     private final ArrayBlockingQueue<byte[]> audio=new ArrayBlockingQueue<>(8);
     private final ArrayBlockingQueue<Control> controls=new ArrayBlockingQueue<>(4);
     private final AtomicBoolean active=new AtomicBoolean(true);
-    private volatile SSLSocket socket;private volatile AudioTrack track;
+    private final AtomicReference<SSLSocket> socket=new AtomicReference<>();private volatile AudioTrack track;
     private volatile long latestSequence=-1,lastAudio,commandSequence;
-    private volatile long receivedFrames,playedFrames;private final AtomicLong queueDrops=new AtomicLong();
+    private volatile long receivedFrames,playedFrames;private final AtomicLong queueDrops=new AtomicLong(),lateDrops=new AtomicLong();
     private volatile long maxArrivalGapMs;
+    private volatile long lastReadExcessMs,playbackResyncs;
+    private final AtomicLong lateReadDrops=new AtomicLong(),latePlaybackDrops=new AtomicLong();
     private volatile LanProtocol.Format format;
     private volatile LanConnection.Stage stage=LanConnection.Stage.TCP;
     private final AtomicBoolean failureReported=new AtomicBoolean();
@@ -43,6 +46,8 @@ final class LanReceiver implements AutoCloseable {
     LanReceiver(LanSettings settings,Listener listener){this(settings,listener,()->true,()->0);}
     LanReceiver(LanSettings settings,Listener listener,java.util.function.BooleanSupplier authority,java.util.function.LongSupplier authorityEpoch){this.settings=settings;this.listener=listener;this.authority=authority;this.authorityEpoch=authorityEpoch;}
     boolean fresh(){return active.get()&&format!=null&&latestSequence>=0&&stream.fresh(SystemClock.elapsedRealtime());}
+    boolean playbackAlive(){return active.get()&&format!=null&&latestSequence>=0&&!stream.timedOut(SystemClock.elapsedRealtime());}
+    void waitingForAudio(){if(active.get()&&outputState!=0){outputState=0;controls.clear();stage(LanConnection.Stage.BUFFERING);}}
     void send(int action){if(fresh()&&settings.hostControl()&&hostPolicy&&authority.getAsBoolean())controls.offer(new Control(action,settings.controlEpoch(),policyEpoch,authorityEpoch.getAsLong()));}
     boolean commandAllowed(long epoch){return settings.hostControl()&&settings.controlEpoch()==epoch;}
     boolean commandAllowed(long epoch,long generation){return commandAllowed(epoch)&&hostPolicy&&policyEpoch==generation;}
@@ -82,7 +87,7 @@ final class LanReceiver implements AutoCloseable {
                 }
             };
             SSLContext context=SSLContext.getInstance("TLS");context.init(null,new TrustManager[]{trust},null);
-            SSLSocket s=(SSLSocket)context.getSocketFactory().createSocket();socket=s;if(!active.get())return;
+            SSLSocket s=(SSLSocket)context.getSocketFactory().createSocket();if(!publishSocket(s))return;
             stage(LanConnection.Stage.TCP);s.connect(new InetSocketAddress(settings.host(),settings.port()),5000);s.setSoTimeout(5000);s.setTcpNoDelay(true);
             stage(LanConnection.Stage.TLS);s.setEnabledProtocols(new String[]{"TLSv1.2"});s.startHandshake();s.setSoTimeout(1500);
             DataInputStream in=new DataInputStream(s.getInputStream());DataOutputStream out=new DataOutputStream(s.getOutputStream());
@@ -96,16 +101,13 @@ final class LanReceiver implements AutoCloseable {
             latestSequence=gate.sequence();lastAudio=SystemClock.elapsedRealtime();receivedFrames++;
             stream.received(lastAudio);timeline=new LanTimeline(ByteBuffer.wrap(first.body,8,8).getLong(),lastAudio);
             audio.offer(first.body);
+            s.setSoTimeout(LanFreshStream.RECOVERY_MS);
             new Thread(this::initializePlayback,"CatchWave-output").start();
             new Thread(()->writeCommands(out),"CatchWave-commands").start();
             while(active.get()){
                 LanProtocol.Packet packet=LanProtocol.read(in);
                 if(packet.kind==LanProtocol.AUDIO){
-                    gate.accept(packet.body,format.bytes());long stamp=ByteBuffer.wrap(packet.body,8,8).getLong(),now=SystemClock.elapsedRealtime();
-                    if(timelineArmed&&timeline.stalled(stamp,now))throw new LanFailure.Coded(LanConnection.Error.AUDIO_STALLED);
-                    maxArrivalGapMs=Math.max(maxArrivalGapMs,now-lastAudio);
-                    latestSequence=gate.sequence();lastAudio=now;stream.received(now);receivedFrames++;
-                    if(!audio.offer(packet.body)){audio.poll();audio.offer(packet.body);queueDrops.incrementAndGet();}
+                    receiveAudio(packet,gate,SystemClock.elapsedRealtime());
                 }else if(packet.kind==LanProtocol.POLICY){policy(packet.body);
                 }else if(packet.kind==LanProtocol.ACK){
                     if(packet.body.length!=9)throw new IOException("Invalid acknowledgment");
@@ -114,6 +116,21 @@ final class LanReceiver implements AutoCloseable {
             }
         }catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);}
         finally {close();listener.finished();}
+    }
+    boolean receiveAudio(LanProtocol.Packet packet,LanProtocol.AudioGate gate,long now)throws IOException{
+        if(!active.get())return false;
+        gate.accept(packet.body,format.bytes());receivedFrames++;
+        long stamp=ByteBuffer.wrap(packet.body,8,8).getLong();
+        // The ordered TLS reader drains delayed packets, but they must not refresh control
+        // authority or reach AudioTrack. A fresh packet can recover the same connection.
+        if(timelineArmed){
+            timeline.observe(stamp,now);lastReadExcessMs=timeline.excessAge(stamp,now);
+            if(timeline.stalled(stamp,now)){lateDrops.incrementAndGet();lateReadDrops.incrementAndGet();return false;}
+        }
+        maxArrivalGapMs=Math.max(maxArrivalGapMs,now-lastAudio);
+        latestSequence=gate.sequence();lastAudio=now;stream.received(now);
+        if(!audio.offer(packet.body)){audio.poll();audio.offer(packet.body);queueDrops.incrementAndGet();}
+        return true;
     }
     private void initializePlayback(){
         boolean entered=false;
@@ -142,13 +159,26 @@ final class LanReceiver implements AutoCloseable {
         finally {if(!entered){AudioTrack t=track;track=null;if(t!=null)t.release();}}
     }
     private void playback(byte[] first){
-        long previous=-1;
+        long previous=-1;boolean paused=false;
         try {
             AudioTrack t=track;if(t==null)return;t.play();
             while(active.get()){
-                byte[] frame=first;first=null;if(frame==null)frame=audio.poll(250,TimeUnit.MILLISECONDS);if(frame==null){if(!fresh())throw new LanFailure.Coded(LanConnection.Error.AUDIO_STALLED);continue;}
+                byte[] frame=first;first=null;if(frame==null)frame=audio.poll(250,TimeUnit.MILLISECONDS);
+                if(frame==null){
+                    if(!playbackAlive())throw new LanFailure.Coded(LanConnection.Error.AUDIO_STALLED);
+                    if(!fresh()&&!paused){t.pause();t.flush();paused=true;previous=-1;waitingForAudio();}
+                    continue;
+                }
+                long now=SystemClock.elapsedRealtime(),stamp=ByteBuffer.wrap(frame,8,8).getLong();
+                if(timeline.stalled(stamp,now)){
+                    lateDrops.incrementAndGet();latePlaybackDrops.incrementAndGet();waitingForAudio();
+                    if(!paused){t.pause();t.flush();paused=true;previous=-1;}
+                    continue;
+                }
                 long sequence=ByteBuffer.wrap(frame).getLong();
-                if(previous>=0&&sequence!=previous+1){t.pause();t.flush();t.play();}previous=sequence;
+                // An isolated missing frame must not discard sound already buffered in AudioTrack.
+                // Large discontinuities still drop the old output and resume at the live frame.
+                if(paused||previous>=0&&sequence-previous>6){t.pause();t.flush();t.play();paused=false;playbackResyncs++;}previous=sequence;
                 byte[] pcm=Arrays.copyOfRange(frame,16,frame.length);
                 LanProtocol.writeFully((bytes,offset,count)->active.get()?t.write(bytes,offset,count,AudioTrack.WRITE_BLOCKING):-1,pcm);
                 playedFrames++;if(playedFrames==1)listener.connected();
@@ -168,21 +198,36 @@ final class LanReceiver implements AutoCloseable {
             LanProtocol.write(out,LanProtocol.COMMAND,LanProtocol.command(format.session,++commandSequence,latestSequence,control.action,control.policyEpoch));
         }}catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);close();}
     }
-    public void close(){if(active.getAndSet(false))DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,"RECEIVER_CLOSED",receivedFrames,playedFrames);audio.clear();controls.clear();SSLSocket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
+    private boolean publishSocket(SSLSocket value){
+        socket.set(value);
+        if(!active.get()){close();return false;}
+        return true;
+    }
+    public void close(){
+        if(active.getAndSet(false))DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,"RECEIVER_CLOSED",receivedFrames,playedFrames);
+        audio.clear();controls.clear();
+        SSLSocket value=socket.getAndSet(null);
+        if(value!=null)new Thread(()->{
+            // Conscrypt may send TLS shutdown data from close(). Service teardown runs on
+            // Android's main thread, so cancellation must return before this network work.
+            try{value.close();}catch(IOException|RuntimeException ignored){DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,"TLS_CLOSE_FAILED");}
+        },"CatchWave-TLS-close").start();
+    }
     private int lastRoute=-2;private long lastDiagnostic=-10000;private boolean focusLost;
     void focus(int change){focusLost=change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT;DiagnosticStore.LOG.event(DiagnosticLog.Event.FOCUS,focusLost?"LOST":change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK?"DUCK":"GAIN",change);}
     String diagnostic(int volume){
         AudioTrack t=track;int type=-1,underruns=-1,play=-1;
         if(t!=null)try{AudioDeviceInfo route=t.getRoutedDevice();type=route==null?-1:route.getType();underruns=t.getUnderrunCount();play=t.getPlayState();}catch(IllegalStateException ignored){}
         if(type!=lastRoute){lastRoute=type;DiagnosticStore.LOG.event(DiagnosticLog.Event.ROUTE,type<0?"UNKNOWN":"CHANGED",type);}
-        String code=DiagnosticLog.output(fresh(),outputState==1,volume,focusLost,type);long now=SystemClock.elapsedRealtime();
-        if(now-lastDiagnostic>=2000){lastDiagnostic=now;DiagnosticStore.LOG.event(DiagnosticLog.Event.SNAPSHOT,code,receivedFrames,playedFrames,latestSequence,latestSequence<0?-1:now-lastAudio,queueDrops.get(),underruns,type,volume,play,outputState);}
-        return switch(code){case "STOPPED_STREAM"->"Поток остановлен/устарел";case "FOCUS_LOST"->"Потерян аудиофокус";case "ROUTE_UNKNOWN"->"Выход телефона не подтверждён";case "VOLUME_ZERO"->"Громкость телефона равна нулю";case "SILENT_SOURCE"->"Источник передаёт нулевые PCM-отсчёты";default->"AudioTrack принимает ненулевой PCM; слышимость не подтверждена";};
+        String code=!fresh()&&playbackAlive()?"BUFFERING":DiagnosticLog.output(fresh(),outputState==1,volume,focusLost,type);long now=SystemClock.elapsedRealtime();
+        if(now-lastDiagnostic>=2000){lastDiagnostic=now;DiagnosticStore.LOG.event(DiagnosticLog.Event.SNAPSHOT,code,receivedFrames,playedFrames,latestSequence,latestSequence<0?-1:now-lastAudio,queueDrops.get(),underruns,type,volume,play,outputState,lateDrops.get(),lastReadExcessMs);}
+        return switch(code){case "BUFFERING"->"Ожидается свежий звук; соединение восстанавливает поток до 5 с";case "STOPPED_STREAM"->"Поток остановлен/устарел";case "FOCUS_LOST"->"Потерян аудиофокус";case "ROUTE_UNKNOWN"->"Выход телефона не подтверждён";case "VOLUME_ZERO"->"Громкость телефона равна нулю";case "SILENT_SOURCE"->"Источник передаёт нулевые PCM-отсчёты";default->"AudioTrack принимает ненулевой PCM; слышимость не подтверждена";};
     }
-    String statistics(){int queued=audio.size();return "Сеанс: "+((SystemClock.elapsedRealtime()-createdAt)/1000)+" с · получено "+receivedFrames+" · записано в AudioTrack "+playedFrames+"\nОчередь PCM в RAM: "+queued+" кадров ("+(queued*20)+" мс) · отброшено "+queueDrops.get()+"\nМакс. интервал прихода: "+maxArrivalGapMs+" мс (не задержка от ПК до динамика)";}
+    String statistics(){int queued=audio.size();return "Сеанс: "+((SystemClock.elapsedRealtime()-createdAt)/1000)+" с · получено "+receivedFrames+" · записано в AudioTrack "+playedFrames+"\nОчередь PCM в RAM: "+queued+" кадров ("+(queued*20)+" мс) · отброшено "+queueDrops.get()+" · устарело "+lateDrops.get()+"\nМакс. интервал прихода: "+maxArrivalGapMs+" мс (не задержка от ПК до динамика)";}
     void dump(PrintWriter out){
         LanProtocol.Format f=format;
-        out.println("audioFresh="+fresh()+" receivedFrames="+receivedFrames+" playedFrames="+playedFrames+" queueDrops="+queueDrops.get());
+        out.println("audioFresh="+fresh()+" playbackAlive="+playbackAlive()+" receivedFrames="+receivedFrames+" playedFrames="+playedFrames+" queueDrops="+queueDrops.get()+" lateDrops="+lateDrops.get());
+        out.println("lateReadDrops="+lateReadDrops.get()+" latePlaybackDrops="+latePlaybackDrops.get()+" lastReadExcessMs="+lastReadExcessMs+" clockCorrectionMs="+(timeline==null?0:timeline.clockCorrection())+" playbackResyncs="+playbackResyncs);
         out.println("lastSequence="+latestSequence+" audioAgeMs="+(latestSequence<0?-1:SystemClock.elapsedRealtime()-lastAudio)+" sentCommands="+commandSequence);
         AudioTrack t=track;int underruns=-1;
         AudioDeviceInfo routed=t==null?null:t.getRoutedDevice();

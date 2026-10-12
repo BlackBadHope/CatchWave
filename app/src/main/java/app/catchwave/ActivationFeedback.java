@@ -2,7 +2,7 @@
 package app.catchwave;
 import java.util.function.Consumer;
 
-/** Feedback follows the actual timed window, never the permission switch or sensor revisions. */
+/** Feedback follows actual activation, never the permission switch or neutral revisions. */
 final class ActivationFeedback {
     private final Consumer<Boolean> player;private boolean active;
     ActivationFeedback(Consumer<Boolean> player){this.player=player;}

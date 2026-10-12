@@ -1,10 +1,14 @@
-# Подхват / CatchWave
+# CatchWave
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current Android source: **0.1.22-arming-feedback, versionCode 29**. The Windows Host **0.1.21-armed-diagnostics** remains compatible; this fix changes no wire protocol. The earlier Android versionCode 25 passed a short owner-operated audio/gesture pilot on a OnePlus 12 running Android 16, including held volume adjustment. This earlier single-device acceptance does not validate the arming gate or version-29 integration fix; latency, battery life and gesture reliability have not been benchmarked across devices.
+Current Android source: **0.1.31-unified-ui, versionCode 49**; Windows Host **0.1.31-desktop**. Both use one dark green visual system. The home screen opens either PC audio/gesture control or nearby-music recognition. Scan and connect/disconnect stay at the top of the PC-audio screen. Scanning during playback first asks to stop the session. Activation uses only a button, with no table pose or rotation prerequisite.
 
-**Accidental-input warning:** with management enabled, ordinary handling can trigger gestures. The owner observed an unintended tilt reducing media volume to silence. Keep management off outside deliberate use/testing. Version 27 added a timed intent gate; version 29 fixes service integration resets and adds optional activation sounds. Physical reliability remains unmeasured. It is not production-ready.
+This release includes asynchronous TLS disconnect/cancellation, protection against a late refresh restarting a stopped session, background audio/power handling, bounded clock correction and continuity across small frame gaps. A delayed first orientation sample now starts a fresh neutral-calibration window. Permission, freshness, posture and accidental-input guards remain enabled. Previous physical checks confirmed audible audio and commands on one phone; automated tests and short listening checks do not establish long-term wireless reliability, battery life or AudioRelay parity.
+
+Download the Android APK and portable Windows Host from [Releases](https://github.com/BlackBadHope/CatchWave/releases). See [UI verification](design-qa.md) and [Windows setup](windows/README.md). This is an experimental prerelease.
+
+**Accidental-input warning:** ordinary handling can trigger commands while control is active. Turn it off outside deliberate use. VersionCode 41 added a posture-change neutral guard after an unintended volume reduction; versionCode 47 retains it and replaces gesture activation with an explicit button. Gesture reliability has not been benchmarked.
 
 ## Windows audio and gesture remote
 
@@ -24,8 +28,8 @@ Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor sa
 1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
 2. On a trusted shared LAN, start `CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372`.
 3. Open **«Звук с ПК»** on the phone, scan the locally displayed Host QR, confirm pairing and press **«Подключиться»**. Grant Camera for scanning and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. Restarting the Host requires a new scan.
-4. Allow control explicitly in the Host and on the phone. Commands remain locked. Place the phone nearly horizontal, screen down, still for 0.85 s; rotate it on the table about 90 degrees either way, then stop for 0.25 s. Two short vibrations and an optional quiet rising tone indicate a fixed 10 s command window; a descending tone indicates its closure. These sounds follow the window, not the permission switch, and can be disabled. Movement does not extend it. Return to the original screen-down heading or turn it steadily screen-up to lock; either stop posture suppresses commands immediately and locks after 0.15 s of stability.
-5. After activation and after each table/held posture transition, hold still for 1.5 seconds to set fresh neutral; rotation of the display resets neutral while preserving the deadline. **«Сбросить активацию и нейтраль»** closes the window and requires activation again. A nearly horizontal stable face-up pose closes it even in a hand. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
+4. Allow control explicitly in the Host and on the phone, enable **«Разрешить жесты»**, then press **«Активировать управление»**. No prior pose or turn is needed. Two short vibrations and an optional rising tone indicate activation. Press **«Выключить управление»** to turn it off; the optional descending tone follows deactivation. There is no mode timer and phone position does not activate or deactivate it. Permission, sensor and session faults still turn control off.
+5. Hold the phone screen toward you, top edge up, still for 1.5 seconds to set neutral. Posture/display changes require fresh neutral without closing the mode. **«Сбросить активацию и нейтраль»** turns control off and requires the button again. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
 6. Gestures normally require CatchWave to be visible. The optional **«Разрешить жесты при выключенном экране»** setting uses the running foreground service and a partial wake lock. Screen-off behavior and battery cost remain experimental. Use **«Отключиться»** to stop the Android session; close the Host to end its pairing session.
 
 Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
@@ -66,7 +70,7 @@ Android requires JDK 17, SDK Platform 36 and Build Tools 36.0.0. Minimum Android
 .\build.ps1 -Validate
 ```
 
-Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release.apk`. This experimental release uses the developer's local Android debug signing key; keys are never committed. Different signers prevent in-place updates. Production signing and a new binary GitHub Release are outside this source update; older Releases can contain older versions.
+Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release.apk`. The experimental APK uses the developer's local Android debug signing key; keys are never committed. Different signers prevent in-place updates. Building with another key cannot update the distributed APK in place. Older Releases contain older versions.
 
 Windows needs Windows 10/11 and .NET 9 SDK/Windows Desktop runtime:
 

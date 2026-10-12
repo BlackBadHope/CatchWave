@@ -6,7 +6,7 @@ import java.util.function.Supplier;
 
 /** Bounded metadata only. Call sites supply fixed codes and numeric values, never exception text or credentials. */
 final class DiagnosticLog {
-    enum Event {SESSION,STAGE,STOP,RECONNECT,FOCUS,ROUTE,SNAPSHOT,GESTURE,VOLUME,ACK,ARMING,CONTROL,STORAGE}
+    enum Event {SESSION,STAGE,STOP,RECONNECT,FOCUS,ROUTE,SNAPSHOT,GESTURE,VOLUME,ACK,ARMING,CONTROL,STORAGE,POWER}
     static final int LIMIT=256,MAX_BYTES=131072;
     private final ArrayDeque<String> ring=new ArrayDeque<>();
     private final Supplier<Instant> clock;private final ZoneId zone;

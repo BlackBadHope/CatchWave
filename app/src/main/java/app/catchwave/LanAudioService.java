@@ -5,10 +5,11 @@ import android.content.*;
 import android.content.pm.ServiceInfo;
 import android.hardware.*;
 import android.media.*;
+import android.net.wifi.WifiManager;
 import android.os.*;
 
 public final class LanAudioService extends Service implements SensorEventListener {
-    static final String START="app.catchwave.LAN_START",STOP="app.catchwave.LAN_STOP",REFRESH="app.catchwave.LAN_REFRESH",CALIBRATE="app.catchwave.LAN_CALIBRATE";
+    static final String START="app.catchwave.LAN_START",STOP="app.catchwave.LAN_STOP",REFRESH="app.catchwave.LAN_REFRESH",CALIBRATE="app.catchwave.LAN_CALIBRATE",ACTIVATE="app.catchwave.LAN_ACTIVATE",DEACTIVATE="app.catchwave.LAN_DEACTIVATE";
     private static final String CHANNEL="catchwave_lan";private static final int NOTICE=24;
     private final Handler main=new Handler(Looper.getMainLooper());private final LanState state=LanState.INSTANCE;
     private final GestureEngine engine=new GestureEngine(this::gesture);
@@ -16,6 +17,7 @@ public final class LanAudioService extends Service implements SensorEventListene
     private String readiness="NONE";
     private SensorManager sensors;private AudioManager manager;private LanSettings settings;
     private LanReceiver receiver;private PowerManager.WakeLock lock;private AudioFocusRequest focus;
+    private WifiManager.WifiLock wifiLock;private boolean wifiUnavailable;private int lastPowerState=-1;
     private volatile boolean registered,commandReady;private boolean destroyed;
     private final GestureArming arming=new GestureArming();private long armRevision=-1,seenEpoch=-1,seenPolicy=-1,lastAccel=-1;private double accelNorm,gyroNorm;private int mutedVolume=-1;
     private long lastGyro=-1;private int volumeBefore=-1,volumeAfter=-1;private String lastVolumeAction="NONE";private long volumeAdjustments,volumeBoundarySkips;
@@ -45,13 +47,27 @@ public final class LanAudioService extends Service implements SensorEventListene
     @Override public int onStartCommand(Intent intent,int flags,int id){
         if(intent==null){stopSelf();return START_NOT_STICKY;}
         if(STOP.equals(intent.getAction())){settings.prefs.edit().putBoolean("resume",false).apply();stopSelf();return START_NOT_STICKY;}
-        if(REFRESH.equals(intent.getAction())){if(receiver!=null&&!settings.hostControl())receiver.revokePending();refreshSensors();return START_NOT_STICKY;}
+        if(REFRESH.equals(intent.getAction())){
+            // A queued activity refresh must not revive a service after owner disconnect.
+            if(!settings.resume()){if(receiver!=null)receiver.close();stopSelf();return START_NOT_STICKY;}
+            if(receiver!=null&&!settings.hostControl())receiver.revokePending();refreshSensors();return START_NOT_STICKY;
+        }
         if(CALIBRATE.equals(intent.getAction())){arming.reset("MANUAL_NEUTRAL");syncArming(SystemClock.elapsedRealtime());return START_NOT_STICKY;}
+        if(ACTIVATE.equals(intent.getAction())||DEACTIVATE.equals(intent.getAction())){
+            if(!settings.resume()){if(receiver!=null)receiver.close();stopSelf();return START_NOT_STICKY;}
+            long now=SystemClock.elapsedRealtime();syncArming(now);
+            if(DEACTIVATE.equals(intent.getAction()))arming.reset("MANUAL_OFF");
+            else if(registered&&orientationRegistered&&effectiveControl()&&GestureGate.freshSample(now,lastGyro)&&GestureGate.freshSample(now,lastAccel)&&GestureGate.freshSample(now,lastOrientation)&&arming.activate(now)){
+                DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"EXPLICIT_ACTIVATION");
+            }else state.update("Активация недоступна","Проверьте соединение, разрешения управления и свежие показания датчиков, затем нажмите «Активировать управление».");
+            syncArming(now);state.changed();return START_NOT_STICKY;
+        }
         if(receiver!=null)return START_NOT_STICKY;
         DiagnosticStore.LOG.begin();DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"START_REQUESTED");
         if(!settings.paired()||!settings.resume()||SessionModel.INSTANCE.running||SessionModel.INSTANCE.measuringAudio){stopSelf();return START_NOT_STICKY;}
         try {
             startForeground(NOTICE,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK|ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+            holdPlaybackPower();
             state.started=true;
             receiver=new LanReceiver(settings,new LanReceiver.Listener(){
                 public boolean ready(){
@@ -79,14 +95,32 @@ public final class LanAudioService extends Service implements SensorEventListene
     private final Runnable health=new Runnable(){public void run(){
         if(destroyed||receiver==null)return;
         syncArming(SystemClock.elapsedRealtime());
-        if(!receiver.fresh()){state.fail(settings,LanConnection.Error.AUDIO_STALLED,state.stage);refreshSensors();stopSelf();return;}
-        else {if(!state.connected){state.connected=true;refreshSensors();}
-            if(settings.screenOff()){
-                if(lock==null){lock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"CatchWave:LAN");lock.setReferenceCounted(false);}
-                lock.acquire(5000);
-            }else if(lock!=null&&lock.isHeld())lock.release();
-        }updateSensorStatus();state.diagnostic=receiver.diagnostic(manager.getStreamVolume(AudioManager.STREAM_MUSIC));state.statistics=receiver.statistics()+"\n"+engine.summary(SystemClock.elapsedRealtime());state.changed();main.postDelayed(this,500);
+        if(!receiver.playbackAlive()){state.fail(settings,LanConnection.Error.AUDIO_STALLED,state.stage);refreshSensors();stopSelf();return;}
+        holdPlaybackPower();
+        if(!receiver.fresh())receiver.waitingForAudio();
+        else if(!state.connected){state.connected=true;refreshSensors();}
+        updatePowerState();updateSensorStatus();state.diagnostic=receiver.diagnostic(manager.getStreamVolume(AudioManager.STREAM_MUSIC));state.statistics=receiver.statistics()+"\n"+engine.summary(SystemClock.elapsedRealtime());state.changed();main.postDelayed(this,500);
     }};
+    @SuppressWarnings("deprecation") private void holdPlaybackPower(){
+        if(lock==null){lock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"CatchWave:LAN-audio");lock.setReferenceCounted(false);}
+        // This owner-started foreground session releases the lock on every teardown.
+        // Gesture preferences and delayed UI health callbacks must not expire audio power.
+        if(!lock.isHeld()){lock.acquire();DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"CPU_HELD");}
+        if(!wifiUnavailable)try{
+            if(wifiLock==null){WifiManager wifi=(WifiManager)getApplicationContext().getSystemService(Context.WIFI_SERVICE);if(wifi==null){wifiUnavailable=true;return;}
+                wifiLock=wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,"CatchWave:LAN-audio");wifiLock.setReferenceCounted(false);}
+            if(!wifiLock.isHeld()){wifiLock.acquire();DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"WIFI_HELD");}
+        }catch(RuntimeException failure){wifiUnavailable=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"WIFI_LOCK_UNAVAILABLE");}
+    }
+    private void releasePlaybackPower(){
+        try{if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}catch(RuntimeException failure){DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"WIFI_RELEASE_FAILED");}
+        finally{if(lock!=null&&lock.isHeld())lock.release();}
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"RELEASED");
+    }
+    private void updatePowerState(){
+        PowerManager power=getSystemService(PowerManager.class);int bits=(power.isInteractive()?1:0)|(power.isDeviceIdleMode()?2:0)|(power.isPowerSaveMode()?4:0)|(lock!=null&&lock.isHeld()?8:0)|(wifiLock!=null&&wifiLock.isHeld()?16:0);
+        if(bits!=lastPowerState){lastPowerState=bits;DiagnosticStore.LOG.event(DiagnosticLog.Event.POWER,"STATE",bits,Build.VERSION.SDK_INT);}
+    }
     private void refreshSensors(){
         syncArming(SystemClock.elapsedRealtime());
         boolean wanted=GestureGate.visibleSession(state.connected,settings.gestures(),uiVisible,settings.screenOff())&&!destroyed;
@@ -114,13 +148,13 @@ public final class LanAudioService extends Service implements SensorEventListene
     private void armTransition(long now){
         feedback.update(arming.active(now),settings.activationSound());
         if(armRevision==arming.revision())return;armRevision=arming.revision();engine.reset(now,"ARMING_"+arming.reason());if(receiver!=null)receiver.revokePending();
-        DiagnosticStore.LOG.event(DiagnosticLog.Event.ARMING,arming.reason(),arming.remaining(now));
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.ARMING,arming.reason(),arming.active(now)?1:0);
         if("ARMED".equals(arming.reason()))try{Vibrator vibrator=getSystemService(Vibrator.class);if(vibrator!=null&&vibrator.hasVibrator())vibrator.vibrate(VibrationEffect.createWaveform(new long[]{0,45,90,45},-1));}catch(RuntimeException ignored){}
     }
     private void updateReadiness(long now){
-        commandReady=arming.commands(now)&&engine.neutralReady(now);
-        String next=!effectiveControl()?"NO_PERMISSION":!registered||!orientationRegistered?"NO_SENSORS":!arming.active(now)?"NOT_ARMED":!arming.commands(now)?"STOP_PENDING":!engine.neutralReady(now)?"NEUTRAL_WAIT":"READY";
-        if(!next.equals(readiness)){readiness=next;DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,next,arming.remaining(now),engine.neutralRemaining(now));}
+        state.armed=arming.active(now);state.activationReady=arming.activationReady();commandReady=arming.commands(now)&&engine.neutralReady(now);state.controlReady=commandReady;
+        String next=!effectiveControl()?"NO_PERMISSION":!registered||!orientationRegistered?"NO_SENSORS":!arming.active(now)?"NOT_ARMED":!engine.neutralReady(now)?"NEUTRAL_WAIT":"READY";
+        if(!next.equals(readiness)){readiness=next;DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,next,state.armed?1:0,engine.neutralRemaining(now));state.changed();}state.controlReadiness=next;
         String detail="READY".equals(next)?"Команды готовы":"NEUTRAL_WAIT".equals(next)?"Команды ждут нейтраль: ещё "+((engine.neutralRemaining(now)+999)/1000)+" с спокойствия":arming.explanation();
         state.arming=arming.label(now)+"\n"+detail+"\nКод: "+arming.reason()+" / "+next;
     }
@@ -210,7 +244,7 @@ public final class LanAudioService extends Service implements SensorEventListene
     }
     @Override public void onDestroy(){
         destroyed=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,state.error==LanConnection.Error.NONE?"SERVICE_DESTROYED":state.error.name());arming.reset("SESSION_END");armTransition(SystemClock.elapsedRealtime());tones.close();main.removeCallbacksAndMessages(null);sensors.unregisterListener(this);engine.setEnabled(false,SystemClock.elapsedRealtime());
-        if(receiver!=null)receiver.close();if(lock!=null&&lock.isHeld())lock.release();if(focus!=null)manager.abandonAudioFocusRequest(focus);
+        if(receiver!=null)receiver.close();releasePlaybackPower();if(focus!=null)manager.abandonAudioFocusRequest(focus);
         if(mutedVolume>=0&&manager.getStreamVolume(AudioManager.STREAM_MUSIC)==0)manager.setStreamVolume(AudioManager.STREAM_MUSIC,mutedVolume,0);
         state.stopped(settings);
         stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
@@ -224,13 +258,17 @@ public final class LanAudioService extends Service implements SensorEventListene
         out.println("stage="+state.stage+" error="+state.error+" lastStage="+state.lastStage+" effectiveControl="+effectiveControl()+" hostAllowed="+state.hostAllowed);
         out.println("started="+state.started+" connected="+state.connected+" sensorsRegistered="+registered+" uiVisible="+uiVisible);
         out.println("gestures="+settings.gestures()+" screenOff="+settings.screenOff()+" resume="+settings.resume()+" wakeHeld="+(lock!=null&&lock.isHeld()));
+        PowerManager power=getSystemService(PowerManager.class);
+        out.println("powerCpuHeld="+(lock!=null&&lock.isHeld())+" wifiHeld="+(wifiLock!=null&&wifiLock.isHeld())+" wifiUnavailable="+wifiUnavailable+" interactive="+power.isInteractive()+" idle="+power.isDeviceIdleMode()+" powerSave="+power.isPowerSaveMode());
         out.println("accelerationSamples="+accelerationSamples+" gyroSamples="+gyroSamples+" staleSamples="+staleSamples+" invalidSamples="+invalidSamples+" gestureActions="+gestureActions);
         out.println("acceptedAcks="+acceptedAcks+" rejectedAcks="+rejectedAcks);
         out.println("orientationRegistered="+orientationRegistered+" orientationSamples="+orientationSamples+" hostControl="+settings.hostControl());
-        out.println("armingActive="+arming.active(SystemClock.elapsedRealtime())+" armingRemainingMs="+arming.remaining(SystemClock.elapsedRealtime())+" armingBaseline="+arming.baseline()+" armingReason="+arming.reason()+" diagnosticStorageFailures="+DiagnosticStore.failures());
+        out.println("armingActive="+arming.active(SystemClock.elapsedRealtime())+" armingMode=BUTTON armingReason="+arming.reason()+" diagnosticStorageFailures="+DiagnosticStore.failures());
+        out.println("controlReadiness="+readiness+" commandReady="+commandReady+" manualActivationReady="+arming.activationReady());
         engine.dump(out,SystemClock.elapsedRealtime());
         out.println("volumeAdjustments="+volumeAdjustments+" volumeBoundarySkips="+volumeBoundarySkips);
         out.println("musicVolume="+manager.getStreamVolume(AudioManager.STREAM_MUSIC)+" musicVolumeMax="+manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)+" fixedVolume="+manager.isVolumeFixed()+" volumeBefore="+volumeBefore+" volumeAfter="+volumeAfter+" lastVolumeAction="+lastVolumeAction);
         LanReceiver r=receiver;if(r!=null)r.dump(out);
+        if(java.util.Arrays.asList(args).contains("--journal")){out.println("CatchWave metadata journal");out.print(DiagnosticStore.LOG.text());}
     }
 }

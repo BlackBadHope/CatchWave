@@ -52,18 +52,18 @@ public class SensorIntegrationTest {
     void frame()throws Exception{frame(Sensor.TYPE_GYROSCOPE,Sensor.TYPE_ACCELEROMETER,Sensor.TYPE_GAME_ROTATION_VECTOR);}
     void quiet(int ms)throws Exception{for(int n=0;n<ms;n+=10)frame();}
     void arm()throws Exception{
-        quiet(900);assertTrue(gate.baseline());pose=new double[]{0,C,-C,0};quiet(300);assertTrue(gate.active(SystemClock.elapsedRealtime()));
+        quiet(100);assertTrue(gate.activationReady());assertFalse(gate.active(SystemClock.elapsedRealtime()));manualStart();assertTrue(gate.active(SystemClock.elapsedRealtime()));
         quiet(1700);assertTrue(engine.neutralReady(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
     }
     @Test public void firstDependenciesInEitherOrderWaitWithoutLocking()throws Exception{
-        frame(Sensor.TYPE_GAME_ROTATION_VECTOR,Sensor.TYPE_ACCELEROMETER,Sensor.TYPE_GYROSCOPE);quiet(900);assertTrue(gate.baseline());assertFalse(gate.reason().contains("STALE"));
+        frame(Sensor.TYPE_GAME_ROTATION_VECTOR,Sensor.TYPE_ACCELEROMETER,Sensor.TYPE_GYROSCOPE);quiet(900);assertTrue(gate.activationReady());assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse(gate.reason().contains("STALE"));
     }
-    @Test public void displayRotationAndOrientationFirstPreserveDeadlineAndRequireNewNeutral()throws Exception{
-        arm();long deadline=SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime()),revision=gate.revision();
+    @Test public void displayRotationAndOrientationFirstKeepActivationAndRequireNewNeutral()throws Exception{
+        arm();long revision=gate.revision();
         Shadows.shadowOf(service.getSystemService(WindowManager.class).getDefaultDisplay()).setRotation(1);
         frame(Sensor.TYPE_GAME_ROTATION_VECTOR,Sensor.TYPE_GYROSCOPE,Sensor.TYPE_ACCELEROMETER);
         assertTrue(gate.reason(),gate.active(SystemClock.elapsedRealtime()));assertFalse(engine.neutralReady(SystemClock.elapsedRealtime()));assertFalse(receiver.commandArmed(revision));
-        assertEquals(deadline,SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime()));quiet(1700);assertTrue((Boolean)get(service,"commandReady"));
+        quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
     }
     @Test public void delayedFirstAccelerationDoesNotEraseOrientationOrResetAgain()throws Exception{
         arm();engine.reset(SystemClock.elapsedRealtime(),"TEST_PROCESSING_RESET");
@@ -80,14 +80,17 @@ public class SensorIntegrationTest {
         pose=new double[]{0,1,0,0};arm();service.onAccuracyChanged(ShadowSensor.newInstance(Sensor.TYPE_GYROSCOPE),SensorManager.SENSOR_STATUS_UNRELIABLE);assertFalse(gate.active(SystemClock.elapsedRealtime()));
         pose=new double[]{0,1,0,0};arm();settings.hostControl(false);frame();assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));
     }
-    @Test public void faceUpAndDeadlineStillClose()throws Exception{
-        arm();pose=new double[]{1,0,0,0};quiet(180);assertFalse(gate.active(SystemClock.elapsedRealtime()));assertEquals("FACE_UP",gate.reason());
-        pose=new double[]{0,1,0,0};arm();quiet((int)gate.remaining(SystemClock.elapsedRealtime())+10);assertFalse(gate.active(SystemClock.elapsedRealtime()));assertEquals("EXPIRED",gate.reason());
+    @Test public void screenViewingAndTableReturnKeepActivationUntilButtonStop()throws Exception{
+        arm();pose=new double[]{1,0,0,0};quiet(12000);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
+        pose=new double[]{0,1,0,0};quiet(200);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));
+        quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
+        service.onStartCommand(new Intent().setAction(LanAudioService.DEACTIVATE),0,9);assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse(LanState.INSTANCE.armed);
+        quiet(900);pose=new double[]{0,C,-C,0};quiet(300);assertFalse(gate.active(SystemClock.elapsedRealtime()));
     }
-    @Test public void uprightPickupPreservesWindowButNeedsQuietNeutral()throws Exception{
-        arm();long deadline=SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime());pose=new double[]{C,C,0,0};frame();
+    @Test public void uprightPickupKeepsActivationButNeedsQuietNeutral()throws Exception{
+        arm();pose=new double[]{C,C,0,0};frame();
         assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));assertEquals("PICKUP_NEUTRAL",gate.reason());
-        assertEquals(deadline,SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime()));quiet(1700);assertTrue((Boolean)get(service,"commandReady"));assertTrue(engine.tiltAvailable(SystemClock.elapsedRealtime()));
+        quiet(1700);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));assertTrue(engine.tiltAvailable(SystemClock.elapsedRealtime()));
     }
     @Test public void rotationDoesNotRecreateForegroundActivity()throws Exception{
         for(Class<?> page:new Class<?>[]{LanAudioActivity.class,MainActivity.class}){
@@ -96,17 +99,38 @@ public class SensorIntegrationTest {
         }
     }
     @Test public void foregroundPagesRetainInstanceAndSensorsOnOrientationConfiguration()throws Exception{
-        arm();long deadline=SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime());
+        arm();
         var main=Robolectric.buildActivity(MainActivity.class).create().start().resume();var original=main.get();
         Configuration landscape=new Configuration(original.getResources().getConfiguration());landscape.orientation=Configuration.ORIENTATION_LANDSCAPE;main.configurationChange(landscape);
-        assertSame(original,main.get());assertTrue(LanAudioService.uiVisible);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertEquals(deadline,SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime()));main.pause().stop().destroy();
+        assertSame(original,main.get());assertTrue(LanAudioService.uiVisible);assertTrue(gate.active(SystemClock.elapsedRealtime()));main.pause().stop().destroy();
         var lan=Robolectric.buildActivity(LanAudioActivity.class).create().start().resume();var lanOriginal=lan.get();
         Configuration portrait=new Configuration(lanOriginal.getResources().getConfiguration());portrait.orientation=Configuration.ORIENTATION_PORTRAIT;lan.configurationChange(portrait);
         assertSame(lanOriginal,lan.get());assertTrue(LanAudioService.uiVisible);lan.pause().stop().destroy();
     }
-    @Test public void gyroMotionDelaysNeutralAndNeverExtendsWindow()throws Exception{
-        quiet(900);pose=new double[]{0,C,-C,0};quiet(300);assertTrue(gate.active(SystemClock.elapsedRealtime()));long deadline=SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime());
-        gyro=.3;quiet(1200);assertFalse((Boolean)get(service,"commandReady"));gyro=0;quiet(1600);assertTrue((Boolean)get(service,"commandReady"));assertEquals(deadline,SystemClock.elapsedRealtime()+gate.remaining(SystemClock.elapsedRealtime()));
+    @Test public void gyroMotionDelaysNeutralWithoutTimingOutActivation()throws Exception{
+        quiet(100);manualStart();assertTrue(gate.active(SystemClock.elapsedRealtime()));
+        gyro=.3;quiet(12000);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));gyro=0;quiet(1600);assertTrue((Boolean)get(service,"commandReady"));
+    }
+    @Test public void visibleGuideTracksButtonActivationAndExplicitStop()throws Exception{
+        arm();LanState.INSTANCE.started=true;pose=new double[]{1,0,0,0};quiet(12000);
+        var page=Robolectric.buildActivity(LanAudioActivity.class).create().start();
+        try{
+            android.widget.TextView guide=(android.widget.TextView)get(page.get(),"guide");
+            assertTrue(guide.getText().toString().startsWith("Управление активировано."));
+            assertFalse(guide.getText().toString().contains("Все команды заблокированы"));
+            assertTrue(((android.widget.TextView)get(page.get(),"controlStatus")).getText().toString().contains("без таймера"));
+            pose=new double[]{0,1,0,0};quiet(900);
+            assertTrue(LanState.INSTANCE.armed);
+            service.onStartCommand(new Intent().setAction(LanAudioService.DEACTIVATE),0,9);
+            Method render=LanAudioActivity.class.getDeclaredMethod("render");render.setAccessible(true);render.invoke(page.get());
+            assertFalse(LanState.INSTANCE.armed);assertTrue(guide.getText().toString().startsWith("Режим выключен."));
+        }finally{page.stop().destroy();}
+    }
+    @Test public void guideExplainsHostBlockInsteadOfRequestingRotation()throws Exception{
+        LanState.INSTANCE.hostAllowed=false;LanState.INSTANCE.armed=false;
+        var page=Robolectric.buildActivity(LanAudioActivity.class).create().start();
+        try{String text=((android.widget.TextView)get(page.get(),"guide")).getText().toString();assertTrue(text.contains("Включить управление хостом"));assertFalse(text.contains("Поверните"));}
+        finally{page.stop().destroy();}
     }
     @Test public void hostPolicyAndIndividuallyStaleDependenciesStillClose()throws Exception{
         arm();receiver.policy(ByteBuffer.allocate(9).put((byte)0).putLong(1).array());frame();assertFalse(gate.active(SystemClock.elapsedRealtime()));
@@ -127,6 +151,44 @@ public class SensorIntegrationTest {
         List<Boolean> tones=new ArrayList<>();set(service,"feedback",new ActivationFeedback(tones::add));settings.prefs.edit().putBoolean("activationSound",true).commit();
         arm();assertEquals(List.of(true),tones);
         Shadows.shadowOf(service.getSystemService(WindowManager.class).getDefaultDisplay()).setRotation(1);frame();quiet(1700);assertEquals(List.of(true),tones);
+        pose=new double[]{1,0,0,0};quiet(12000);assertEquals(List.of(true),tones);
+        pose=new double[]{0,1,0,0};quiet(900);assertEquals(List.of(true),tones);
+        service.onStartCommand(new Intent().setAction(LanAudioService.DEACTIVATE),0,9);assertEquals(List.of(true,false),tones);
         settings.hostControl(false);frame();frame();assertEquals(List.of(true,false),tones);
+    }
+    void manualStart()throws Exception{service.onStartCommand(new Intent().setAction("app.catchwave.LAN_ACTIVATE"),0,8);}
+    @Test public void activityButtonAloneActivatesAndStopsWithoutTableReference()throws Exception{
+        pose=new double[]{1,0,0,0};quiet(100);LanState.INSTANCE.started=true;LanState.INSTANCE.listening=true;
+        var page=Robolectric.buildActivity(LanAudioActivity.class).create().start();
+        try{
+            android.widget.Button button=(android.widget.Button)get(page.get(),"mode");
+            assertEquals("Активировать управление",button.getText().toString());assertTrue(button.isEnabled());
+            button.performClick();Intent activate=Shadows.shadowOf(page.get()).getNextStartedService();
+            assertEquals(LanAudioService.ACTIVATE,activate.getAction());service.onStartCommand(activate,0,8);
+            quiet(1700);assertTrue(LanState.INSTANCE.armed);assertTrue(LanState.INSTANCE.controlReady);
+            Method render=LanAudioActivity.class.getDeclaredMethod("render");render.setAccessible(true);render.invoke(page.get());
+            assertEquals("Выключить управление",button.getText().toString());
+            button.performClick();Intent deactivate=Shadows.shadowOf(page.get()).getNextStartedService();
+            assertEquals(LanAudioService.DEACTIVATE,deactivate.getAction());service.onStartCommand(deactivate,0,9);
+            pose=new double[]{0,1,0,0};quiet(900);pose=new double[]{0,C,-C,0};quiet(300);
+            assertFalse(LanState.INSTANCE.armed);assertTrue(receiver.playbackAlive());assertTrue(settings.resume());
+        }finally{page.stop().destroy();}
+    }
+    @Test public void explicitActivationWithoutTablePositionWaitsForNeutralAndSurvivesPickup()throws Exception{
+        pose=new double[]{1,0,0,0};quiet(100);assertFalse(gate.active(SystemClock.elapsedRealtime()));
+        manualStart();assertTrue(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));
+        quiet(1700);assertTrue((Boolean)get(service,"commandReady"));
+        pose=new double[]{0,1,0,0};quiet(1900);assertTrue(gate.active(SystemClock.elapsedRealtime()));assertTrue((Boolean)get(service,"commandReady"));
+    }
+    @Test public void explicitStopOnlyStopsControlAndKeepsAudioAndPermissions()throws Exception{
+        arm();service.onStartCommand(new Intent().setAction("app.catchwave.LAN_DEACTIVATE"),0,9);
+        assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse((Boolean)get(service,"commandReady"));assertTrue(receiver.playbackAlive());assertTrue(settings.resume());assertTrue(settings.hostControl());assertTrue(settings.gestures());
+    }
+    @Test public void explicitActivationCannotUseRevokedPermission()throws Exception{
+        pose=new double[]{1,0,0,0};quiet(100);settings.hostControl(false);manualStart();assertFalse(gate.active(SystemClock.elapsedRealtime()));
+    }
+    @Test public void explicitActivationCannotUseStaleDependenciesOrReviveOwnerStop()throws Exception{
+        quiet(900);pose=new double[]{1,0,0,0};frame();set(service,"lastGyro",SystemClock.elapsedRealtime()-151);manualStart();assertFalse(gate.active(SystemClock.elapsedRealtime()));
+        settings.prefs.edit().putBoolean("resume",false).commit();quiet(100);manualStart();assertFalse(gate.active(SystemClock.elapsedRealtime()));assertFalse(receiver.playbackAlive());assertTrue(Shadows.shadowOf(service).isStoppedBySelf());
     }
 }

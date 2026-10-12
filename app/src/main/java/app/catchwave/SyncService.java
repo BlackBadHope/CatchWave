@@ -65,7 +65,7 @@ public final class SyncService extends Service {
     @Override public void onCreate(){
         super.onCreate();bridge=new MediaBridge(this);
         NotificationManager nm=getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(CHANNEL,"Подхват музыки",NotificationManager.IMPORTANCE_LOW));
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL,"CatchWave · Музыка вокруг",NotificationManager.IMPORTANCE_LOW));
         audioManager=getSystemService(AudioManager.class);audioManager.registerAudioDeviceCallback(routeCallback,main);
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){
@@ -100,7 +100,7 @@ public final class SyncService extends Service {
         Intent open=new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,SyncService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_wave).setContentTitle(model.live?"Подхват · Live Sync":"Подхват музыки")
+        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_wave).setContentTitle(model.live?"CatchWave · Live Sync":"CatchWave · Музыка вокруг")
             .setContentText(text).setContentIntent(pi).setOngoing(active).setOnlyAlertOnce(true)
             .addAction(new Notification.Action.Builder(null,"Остановить",stop).build()).build();
     }
@@ -291,8 +291,8 @@ public final class SyncService extends Service {
                 model.record("Каталог: "+match.playbackTitle+" / "+match.playbackArtist+"; ссылка="+resolved);
                 if(!resolved.isEmpty()&&getSharedPreferences("settings",MODE_PRIVATE).getBoolean("compatibleLaunch",false)){
                     compatibleOpening=true;ownsQueue=true;model.needsOpen=true;model.compatibleLaunchRequested=true;
-                    model.update("Запускаю найденную запись","YouTube Music кратко откроется. После установки таймкода вернёмся в «Подхват».");
-                    notifyStatus("Открой «Подхват», чтобы запустить найденную запись");return;
+                    model.update("Запускаю найденную запись","YouTube Music кратко откроется. После установки таймкода вернёмся в «CatchWave».");
+                    notifyStatus("Открой «CatchWave», чтобы запустить найденную запись");return;
                 }
                 boolean remote=false;if(!resolved.isEmpty())try{lastLaunchRequest=SystemClock.elapsedRealtime();remote=bridge.requestTrack(model.track);if(remote)claimQueue(bridge.controller());}catch(Exception ignored){}
                 model.needsOpen=!remote;
@@ -317,7 +317,7 @@ public final class SyncService extends Service {
     }
     private final Runnable tick=new Runnable(){public void run(){
         if(!active)return;
-        try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включите доступ к уведомлениям для «Подхвата».");}
+        try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включите доступ к уведомлениям для «CatchWave».");}
         if(active)main.postDelayed(this,200);
     }};
     private void syncTick(){
@@ -450,7 +450,7 @@ public final class SyncService extends Service {
     }
     private void armQueueGuard(MediaController c,Track t){
         if(endGuard!=null||c==null||t==null)return;
-        endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «Подхвата».");}});
+        endGuard=new TrackEndGuard(c,t,main,()->{if(active)try{syncTick();}catch(SecurityException e){finish("Доступ к плееру отключён","Включи доступ к уведомлениям для «CatchWave».");}});
         model.record("Контроль очереди YouTube Music включён");
     }
     private void haltOwnedQueue(){

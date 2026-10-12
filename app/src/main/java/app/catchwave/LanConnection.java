@@ -2,7 +2,7 @@
 package app.catchwave;
 /** Fixed public diagnostic codes; never exception text or credentials. */
 final class LanConnection {
-    enum Stage { DISCONNECTED, SCANNED, STARTING, TCP, TLS, AUTH, AUTHENTICATED, FORMAT, FOCUS, OUTPUT, SILENCE, STREAMING, ERROR }
+    enum Stage { DISCONNECTED, SCANNED, STARTING, TCP, TLS, AUTH, AUTHENTICATED, FORMAT, FOCUS, OUTPUT, SILENCE, STREAMING, ERROR, BUFFERING }
     enum Error { NONE, ANDROID_START, CONNECT_TIMEOUT, CONNECT_REFUSED, NETWORK, TLS_HANDSHAKE, PIN_MISMATCH, CERT_TIME,
         AUTH_REJECTED_OR_CLOSED, PROTOCOL, HOST_TIMEOUT, HOST_CLOSED, AUDIO_FOCUS, AUDIO_FOCUS_LOST, PCM_OUTPUT, AUDIO_STALLED, INTERNAL }
     static String title(Stage stage) { return switch(stage) {
@@ -11,6 +11,7 @@ final class LanConnection {
         case AUTH -> "Подтверждение сопряжения…"; case AUTHENTICATED -> "Сопряжение принято ПК";
         case FORMAT -> "Формат звука получен"; case FOCUS -> "Получение аудиофокуса…"; case OUTPUT -> "Подготовка звука телефона…";
         case SILENCE -> "Соединение работает — принимается тишина"; case STREAMING -> "Звук с ПК воспроизводится"; case ERROR -> "Соединение остановлено — ошибка";
+        case BUFFERING -> "Соединение сохранено — ожидается свежий звук";
     }; }
     static String remedy(Error error) { return switch(error) {
         case NONE -> "";

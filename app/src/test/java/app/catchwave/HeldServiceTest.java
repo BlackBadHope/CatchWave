@@ -37,8 +37,7 @@ public class HeldServiceTest {
     @After public void cleanup(){life.destroy();settings.prefs.edit().clear().commit();LanAudioService.uiVisible=false;}
     void arm()throws Exception{
         GestureArming gate=(GestureArming)field(service,"arming");long start=SystemClock.elapsedRealtime();gate.permit(true,start);
-        for(long n=0;n<=900;n+=50)gate.sample(start+n,0,1,0,0,0,9.81);
-        double c=Math.sqrt(.5);for(long n=950;n<=1250;n+=50)gate.sample(start+n,0,c,-c,0,0,9.81);
+        double c=Math.sqrt(.5);gate.sample(start+1250,0,c,-c,0,0,9.81);assertTrue(gate.activate(start+1250));
         GestureEngine e=(GestureEngine)field(service,"engine");e.setEnabled(true,start+1250);
         for(long n=1300;n<=2900;n+=50){gate.sample(start+n,0,c,-c,0,0,9.81);e.gyro(0,0,0);e.orientation(start+n,0,c,-c,0);e.acceleration(start+n,0,0,-9.81);}
         field(service,"armRevision",gate.revision());ShadowSystemClock.advanceBy(Duration.ofMillis(2900));assertTrue(e.neutralReady(SystemClock.elapsedRealtime()));assertTrue(gate.commands(SystemClock.elapsedRealtime()));

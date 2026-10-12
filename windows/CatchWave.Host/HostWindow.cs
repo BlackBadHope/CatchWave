@@ -1,73 +1,187 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System.Security.Cryptography;
+using System.Reflection;
 using QRCoder;
 namespace CatchWave.Host;
 
 internal static class PairingQr {
-    internal static byte[] Png(string payload){
+    internal static byte[] Png(string payload,int scale=6){
         using var data=QRCodeGenerator.GenerateQrCode(payload,QRCodeGenerator.ECCLevel.Q);
-        using var qr=new PngByteQRCode(data);return qr.GetGraphic(6);
+        using var qr=new PngByteQRCode(data);return qr.GetGraphic(scale);
     }
-    // Inert deterministic public fixture; never accepted by a HostIdentity. No listener/key/random token.
+    // Inert public fixture, never a HostIdentity or listener credential.
     internal const string Fixture="CW1/192.0.2.1/49372/__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA/AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 }
+
 internal sealed class HostWindow:Form {
-    private HostPermission permission=new(false,0);internal HostPermission Permission=>Volatile.Read(ref permission);internal bool MediaEnabled=>Permission.Enabled;
+    internal static readonly Color Surface=Color.FromArgb(16,21,16),TextColor=Color.FromArgb(238,245,230),
+        Muted=Color.FromArgb(164,177,159),Accent=Color.FromArgb(185,246,107),Line=Color.FromArgb(55,67,51);
+    private HostPermission permission=new(false,0);
+    internal HostPermission Permission=>Volatile.Read(ref permission);
+    internal bool MediaEnabled=>Permission.Enabled;
     private readonly object policyGate=new();
     private readonly HostStatus model;
-    private readonly Label connection=new(){AutoSize=true},reason=new(){AutoSize=true},statistics=new(){AutoSize=true},phone=new(){AutoSize=true},controlStatus=new(){AutoSize=true};
-    private readonly Button control=new(){Width=440,Height=36},revoke=new(){Text="Отозвать разрешение ПК",Width=440,Height=36};
-    private readonly Label saving=new(){AutoSize=true,MaximumSize=new Size(455,0)};
+    private readonly Label connection=Label(28,true),reason=Label(11),statistics=Label(10),phone=Label(11),controlStatus=Label(17,true),controlHint=Label(11),saving=Label(10),badge=Label(11,true);
+    private readonly Button control=Button(""),revoke=Button("Отозвать разрешение ПК");
     private readonly bool locked;private readonly Func<bool,bool> save;
-    internal HostWindow(HostIdentity identity,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status){
+    private readonly PictureBox picture=new(),guide=new();
+    private readonly Panel pairing=new(),diagnostics=new(),commands=new();
+    private readonly Button pairAction=Button(""),diagnosticAction=Button("Диагностика");
+    private readonly Label details=Label(10);
+    private readonly string endpoint,fingerprint;
+    private bool pairOpen=true,diagnosticOpen;
+    private bool? wasLive;
+    private readonly System.Windows.Forms.Timer timer=new(){Interval=500};
+    private readonly CancellationTokenRegistration cancellation;
+    private readonly List<IDisposable> assets=[];
+
+    internal HostWindow(HostIdentity identity,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status)
+        :this(identity.PairCode(address,port),Convert.ToHexString(SHA256.HashData(identity.Certificate.RawData)),address,port,synthetic,enabled,stop,save,lockedOff,status){}
+
+    // Native rendering/test entry uses only an inert public fixture, never a live pairing identity.
+    internal HostWindow(string pairCode,string certificate,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status){
         model=status;locked=lockedOff;this.save=save;permission=new(enabled&&!lockedOff,0);
-        Text="CatchWave Host — соединение с телефоном";ClientSize=new Size(530,900);MinimumSize=new Size(530,780);StartPosition=FormStartPosition.CenterScreen;
-        var header=new FlowLayoutPanel{Dock=DockStyle.Top,AutoSize=true,FlowDirection=FlowDirection.TopDown,WrapContents=false,Padding=new Padding(20,12,20,8)};
-        foreach(var label in new[]{connection,reason,statistics,phone,controlStatus,saving}){label.MaximumSize=new Size(455,0);header.Controls.Add(label);}header.Controls.Add(control);
-        var body=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(20)};
-        var bottom=new Button{Text="Отключиться и закрыть Host",Dock=DockStyle.Bottom,Height=42};bottom.Click+=(_,_)=>Close();
-        Controls.Add(body);Controls.Add(header);Controls.Add(bottom);
-        body.Controls.Add(new Label{Text="Сканируйте этот QR в CatchWave на своём телефоне.",AutoSize=true});
-        byte[] png=PairingQr.Png(identity.PairCode(address,port));using var bytes=new MemoryStream(png);using var image=Image.FromStream(bytes);
-        var picture=new PictureBox{Width=400,Height=400,SizeMode=PictureBoxSizeMode.CenterImage,Image=new Bitmap(image),BackColor=Color.White};body.Controls.Add(picture);
-        body.Controls.Add(new Label{Text=synthetic?"Источник: синтетическая тишина; захвата звука ПК нет":"Источник: основной аудиовыход Windows после аутентификации",AutoSize=true,MaximumSize=new Size(440,0)});
-        var details=new Label{Text=$"{address}:{port}\nСертификат SHA-256:\n{Convert.ToHexString(SHA256.HashData(identity.Certificate.RawData))}",AutoSize=true,MaximumSize=new Size(440,0),Visible=false};
-        revoke.Visible=false;revoke.Click+=(_,_)=>SetMedia(false);
-        var advanced=new Button{Text="Дополнительно",Width=440,Height=36};advanced.Click+=(_,_)=>{details.Visible=!details.Visible;revoke.Visible=details.Visible;};body.Controls.Add(advanced);body.Controls.Add(details);body.Controls.Add(revoke);
-        var logs=new Button{Text="Показать журнал диагностики",Width=440,Height=36};logs.Click+=(_,_)=>{using var dialog=new Form{Text="Последние 256 событий — без аудио и секретов",Width=900,Height=650};dialog.Controls.Add(new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,Text=model.Log.Text().Replace("\n",Environment.NewLine)});dialog.ShowDialog(this);};body.Controls.Add(logs);
-        var export=new Button{Text="Экспорт диагностики",Width=440,Height=36};export.Click+=(_,_)=>{using var pick=new SaveFileDialog{Filter="Text|*.txt",FileName="CatchWave-diagnostics.txt"};if(pick.ShowDialog(this)==DialogResult.OK)try{File.WriteAllText(pick.FileName,model.Log.Text());}catch(IOException){MessageBox.Show(this,"Не удалось сохранить диагностику");}catch(UnauthorizedAccessException){MessageBox.Show(this,"Система запретила запись диагностики");}};body.Controls.Add(export);
-        body.Controls.Add(new Label{Text="QR приватен. Не отправляйте его или скриншот. Закрытие Host отзывает сопряжение; после перезапуска нужен новый QR.",AutoSize=true,MaximumSize=new Size(440,0)});
+        endpoint=$"{address}:{port}";fingerprint=certificate;
+        Text="CatchWave Host";ClientSize=new Size(940,650);MinimumSize=new Size(950,690);
+        StartPosition=FormStartPosition.CenterScreen;BackColor=Surface;ForeColor=TextColor;
+        Font=new Font("Segoe UI",11);AutoScaleMode=AutoScaleMode.Dpi;DoubleBuffered=true;
+        using(var brandIcon=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.brand.ico")!){var icon=new Icon(brandIcon);Icon=icon;assets.Add(icon);}
+
+        var page=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(28,20,28,20),ColumnCount=1,RowCount=3,BackColor=Surface};
+        page.RowStyles.Add(new RowStyle(SizeType.Absolute,54));page.RowStyles.Add(new RowStyle(SizeType.Percent,100));page.RowStyles.Add(new RowStyle(SizeType.Absolute,50));
+        Controls.Add(page);
+        var top=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,240));
+        var brand=Label(19,true);brand.Text="CatchWave  Host";brand.ForeColor=Accent;
+        badge.TextAlign=ContentAlignment.MiddleRight;badge.Dock=DockStyle.Fill;
+        top.Controls.Add(brand,0,0);top.Controls.Add(badge,1,0);page.Controls.Add(top,0,0);
+
+        var columns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty,BackColor=Surface};
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,310));
+        page.Controls.Add(columns,0,1);
+        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=new Padding(0,8,30,0),AutoScroll=true};
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,54));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,158));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,66));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
+        var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Основной аудиовыход Windows\nПередача звука на телефон";
+        source.Dock=DockStyle.Fill;left.Controls.Add(source,0,1);
+        controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
+        guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;
+        using(var asset=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.tilt.png")!){using var img=Image.FromStream(asset);guide.Image=new Bitmap(img);assets.Add(guide.Image);}
+        left.Controls.Add(guide,0,3);
+        control.Dock=DockStyle.Fill;left.Controls.Add(control,0,4);
+        controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,5);
+        var warning=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};
+        saving.MaximumSize=new Size(480,0);reason.MaximumSize=new Size(480,0);warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,6);
+        columns.Controls.Add(left,0,0);
+
+        var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=new Padding(0,8,0,0)};
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute,38));right.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute,42));right.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
+        pairAction.Dock=DockStyle.Fill;pairAction.Click+=(_,_)=>{pairOpen=!pairOpen;RenderPanels();};right.Controls.Add(pairAction,0,0);
+        pairing.Dock=DockStyle.Fill;
+        var pairLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Padding=new Padding(4,12,4,4)};
+        pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,280));pairLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        var scan=Label(11);scan.Text="Сканируйте QR в CatchWave";scan.TextAlign=ContentAlignment.MiddleCenter;scan.Dock=DockStyle.Fill;
+        using(var bytes=new MemoryStream(PairingQr.Png(pairCode,4)))using(var img=Image.FromStream(bytes)){picture.Image=new Bitmap(img);assets.Add(picture.Image);}
+        picture.Dock=DockStyle.Fill;picture.SizeMode=PictureBoxSizeMode.CenterImage;picture.BackColor=Color.White;
+        var privacy=Label(9);privacy.Text="QR приватен. После перезапуска Host\nнужно снова отсканировать новый QR.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
+        pairLayout.Controls.Add(scan,0,0);pairLayout.Controls.Add(picture,0,1);pairLayout.Controls.Add(privacy,0,2);pairing.Controls.Add(pairLayout);
+        right.Controls.Add(pairing,0,1);
+        phone.Dock=DockStyle.Fill;phone.MaximumSize=new Size(300,0);right.Controls.Add(phone,0,2);
+        diagnosticAction.Dock=DockStyle.Fill;diagnosticAction.Click+=(_,_)=>{diagnosticOpen=!diagnosticOpen;RenderPanels();};right.Controls.Add(diagnosticAction,0,3);
+        columns.Controls.Add(right,1,0);
+
+        // Diagnostics replace the QR area, avoiding an ever-growing main window.
+        diagnostics.Dock=DockStyle.Fill;
+        var diagnosticLayout=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(4,12,4,0)};
+        statistics.MaximumSize=details.MaximumSize=new Size(288,0);
+        details.Text=$"Адрес: {endpoint}\nСертификат SHA-256:\n{fingerprint}";details.AutoSize=true;
+        var logs=Button("Открыть журнал");logs.Width=284;logs.Click+=(_,_)=>ShowLog();
+        var export=Button("Экспорт диагностики");export.Width=284;export.Click+=(_,_)=>ExportLog();
+        revoke.Width=284;revoke.Click+=(_,_)=>SetMedia(false);
+        foreach(Control item in new Control[]{statistics,details,logs,export,revoke})diagnosticLayout.Controls.Add(item);
+        diagnostics.Controls.Add(diagnosticLayout);right.Controls.Add(diagnostics,0,1);
+        commands.Dock=DockStyle.Fill;
+        var commandLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=3,Padding=new Padding(10,40,10,30)};
+        commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
+        commandLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,60));commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent,50));commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent,50));
+        var commandTitle=Label(14,true);commandTitle.Text="Постукивания по телефону";commandTitle.Dock=DockStyle.Fill;commandLayout.Controls.Add(commandTitle,0,0);commandLayout.SetColumnSpan(commandTitle,2);
+        string[] captions={"Пауза / старт","Следующий","Предыдущий","Звук телефона"};
+        for(int i=0;i<4;i++){var cell=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,Padding=new Padding(4,6,4,6)};
+            var count=Label(32,true);count.Text=(i+3).ToString();count.ForeColor=Accent;var caption=Label(10);caption.Text=captions[i];cell.Controls.Add(count);cell.Controls.Add(caption);commandLayout.Controls.Add(cell,i%2,1+i/2);}
+        commands.Controls.Add(commandLayout);right.Controls.Add(commands,0,1);
+
+        var footer=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=new Padding(0,8,0,0)};
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,270));
+        var note=Label(9);note.Text="Звук и управление работают независимо";note.Dock=DockStyle.Fill;note.TextAlign=ContentAlignment.MiddleLeft;
+        var close=Button("Отключить и закрыть Host");close.Dock=DockStyle.Fill;close.Click+=(_,_)=>Close();
+        footer.Controls.Add(note,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
+
         control.Click+=(_,_)=>{
             if(MediaEnabled)SetMedia(false);
-            else if(!locked&&!MediaEnabled&&MessageBox.Show(this,"Разрешить командам play/pause, next и previous управлять проигрывателем этого ПК? Телефон также должен разрешить управление.","Включить управление хостом?",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
+            else if(!locked&&MessageBox.Show(this,"Разрешить телефону управлять проигрывателем этого ПК? На телефоне управление также нужно разрешить и активировать.","Управление с телефона",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
         };
-        model.Changed+=RefreshState;var timer=new System.Windows.Forms.Timer{Interval=500};timer.Tick+=(_,_)=>Render();timer.Start();
-        FormClosing+=(_,_)=>stop.Cancel();Disposed+=(_,_)=>{timer.Dispose();model.Changed-=RefreshState;picture.Image?.Dispose();picture.Image=null;};
+        model.Changed+=RefreshState;timer.Tick+=(_,_)=>Render();timer.Start();
+        FormClosing+=(_,_)=>stop.Cancel();
         Shown+=(_,_)=>{Render();if(stop.IsCancellationRequested)Close();};
-        stop.Token.Register(()=>{if(IsHandleCreated&&!IsDisposed)try{BeginInvoke(new Action(Close));}catch(InvalidOperationException){}});Render();
+        cancellation=stop.Token.Register(()=>{if(IsHandleCreated&&!IsDisposed)try{BeginInvoke(new Action(Close));}catch(InvalidOperationException){}});
+        Render();
     }
-    private void SetMedia(bool value){if(locked)return;model.Log.Event("CONTROL",value?"PERMISSION_ON":"PERMISSION_OFF");lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
+
+    private static Label Label(float size,bool bold=false)=>new(){AutoSize=true,ForeColor=bold?TextColor:Muted,BackColor=Color.Transparent,Font=new Font("Segoe UI",size,bold?FontStyle.Bold:FontStyle.Regular),Margin=new Padding(0,3,0,6)};
+    private static Button Button(string text)=>new HostButton(){Text=text,Height=38,ForeColor=TextColor,BackColor=Surface,Font=new Font("Segoe UI",11),Cursor=Cursors.Hand,Margin=new Padding(0,3,0,3)};
+    private void RenderPanels(){
+        pairing.Visible=pairOpen&&!diagnosticOpen;diagnostics.Visible=diagnosticOpen;
+        commands.Visible=!pairOpen&&!diagnosticOpen;
+        pairAction.Text=pairOpen?"Скрыть QR":"Подключить телефон";
+        diagnosticAction.Text=diagnosticOpen?"Закрыть диагностику":"Диагностика";
+    }
+    private void ShowLog(){
+        using var dialog=new Form{Text="CatchWave — последние 256 событий",Width=940,Height=650,BackColor=Surface,StartPosition=FormStartPosition.CenterParent};
+        dialog.Controls.Add(new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,BackColor=Surface,ForeColor=TextColor,Font=new Font("Consolas",10),Text=model.Log.Text().Replace("\n",Environment.NewLine)});
+        dialog.ShowDialog(this);
+    }
+    private void ExportLog(){using var pick=new SaveFileDialog{Filter="Text|*.txt",FileName="CatchWave-diagnostics.txt"};
+        if(pick.ShowDialog(this)==DialogResult.OK)try{File.WriteAllText(pick.FileName,model.Log.Text());}catch(IOException){MessageBox.Show(this,"Не удалось сохранить диагностику");}catch(UnauthorizedAccessException){MessageBox.Show(this,"Система запретила запись диагностики");}}
+    private void SetMedia(bool value){if(locked)return;model.Log.Event("CONTROL",value?"PERMISSION_ON":"PERMISSION_OFF");
+        lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
         saving.Text=save(value)?"":value?"Включение не сохранено; оно действует только в этом сеансе.":"Выключение не сохранено. После перезапуска проверьте разрешение ПК.";Render();}
     internal bool Execute(byte action,HostPermission observed){lock(policyGate){return Permission==observed&&observed.Enabled&&MediaKeys.Send(action);}}
     private void RefreshState(){if(IsDisposed)return;if(IsHandleCreated)try{BeginInvoke(new Action(Render));}catch(InvalidOperationException){}}
     internal void Render(){
         if(IsDisposed)return;HostSnapshot s=model.Snapshot;
         connection.Text=s.Stage switch {
-            HostStage.Listening=>"Ожидание телефона — соединения нет",HostStage.Tcp=>"Телефон открыл TCP",HostStage.Tls=>"Проверка TLS…",HostStage.Auth=>"Ожидание подтверждения сопряжения…",
-            HostStage.Authenticated=>"Сопряжение принято",HostStage.Format=>"Формат PCM отправлен",HostStage.SilenceSent=>"Соединение работает — отправляется тишина",HostStage.AudioSent=>"Соединение работает — отправляется звук",
-            HostStage.Disconnected=>"Телефон отключён — ожидание нового подключения",_=>"Соединение остановлено — ошибка"
+            HostStage.Listening=>"Подключите телефон",HostStage.Tcp or HostStage.Tls=>"Подключение…",HostStage.Auth=>"Проверка сопряжения…",
+            HostStage.Authenticated or HostStage.Format=>"Запуск звука…",HostStage.SilenceSent=>"Тишина с ПК",HostStage.AudioSent=>"Звук отправляется",
+            HostStage.Disconnected=>"Телефон отключён",_=>"Связь прервалась"
         };
-        reason.Text=s.Error==HostError.None?"":$"Код: {s.Error} · этап: {s.FailedAt}. "+(s.Error switch {
-            HostError.AuthRejected=>"Сканируйте QR текущего окна Host.",HostError.TlsHandshake=>"TLS не установлен. TCP-проверка без TLS также даёт этот код.",
-            HostError.CaptureFailed=>"Не удалось открыть или читать аудиовыход Windows.",HostError.PeerClosed=>"Телефон закрыл соединение; проверьте его код ошибки.",
-            HostError.Protocol=>"Несовместимые данные. Нужны Host и Android из одного комплекта.",_=>"Проверьте состояние на телефоне и повторите подключение."
-        });
-        statistics.Text=$"Сеанс: {s.Seconds} с · отправлено PCM: {s.Frames} · пропущено интервалов: {s.Skipped}\nПоследняя причина: {model.Log.LastReason} · ошибок записи журнала: {model.Log.StorageFailures}";
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
-        phone.Text=!fresh?"Вывод и датчики телефона: подтверждения нет":$"Телефон: {(s.ClientOutput==0?"вывод ещё не подтверждён":s.ClientOutput==1?"AudioTrack принял тишину":"AudioTrack принял звук")}; датчики: "+(s.Sensors switch {0=>"выключены",1=>"настройка нейтрали",2=>"нейтраль готова",3=>"недоступны",4=>"ожидание измерений",_=>"наклоны недоступны"});
+        badge.Text=s.Live?"Соединение работает":s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
+        badge.ForeColor=s.Live?Accent:Muted;
+        reason.Text=s.Error==HostError.None?"":s.Error switch {
+            HostError.AuthRejected=>"Сканируйте QR текущего Host.",HostError.TlsHandshake=>"Не удалось установить защищённое соединение.",
+            HostError.CaptureFailed=>"Аудиовыход Windows недоступен. Откройте диагностику.",
+            HostError.PeerClosed=>"Можно подключить телефон снова.",HostError.Protocol=>"Проверьте совместимость версий Host и Android.",_=>"Проверьте состояние на телефоне и откройте диагностику."
+        };
+        statistics.Text=$"Сеанс: {s.Seconds} с\nОтправлено кадров: {s.Frames}\nПропущено интервалов: {s.Skipped}\nКод: {s.Error} · этап: {s.FailedAt}\nПоследняя причина: {model.Log.LastReason}\nОшибок журнала: {model.Log.StorageFailures}";
+        phone.Text=!fresh?"Вывод телефона не подтверждён":s.ClientOutput switch {0=>"Ожидаем вывод телефона",1=>"Телефон принимает тишину",_=>"Телефон принимает звук"};
         bool effective=s.Effective(MediaEnabled,Permission.Generation);
-        string cause=locked?"Команды заблокированы флагом текущего пилота":!fresh||s.ClientOutput==0?"Нет свежего подтверждения вывода телефона":!MediaEnabled?"Разрешение ПК выключено":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активация, нейтраль или разрешение ещё не готовы":"Телефон подтвердил окно команд; таймер виден на телефоне";
-        controlStatus.Text=(effective?"Управление включено":"Управление выключено")+" — "+cause;
-        control.Text=MediaEnabled?"Выключить управление хостом":"Включить управление хостом";control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
+        controlStatus.Text=effective?"Управление включено":"Управление выключено";
+        controlStatus.ForeColor=effective?Accent:TextColor;
+        string cause=locked?"Команды заблокированы флагом запуска":!MediaEnabled?"Разрешение ПК выключено":!fresh||s.ClientOutput==0?"Разрешение ПК включено. Подключите телефон.":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активируйте управление кнопкой и держите спокойно 1,5 секунды":"Жесты готовы на телефоне. Наклон меняет громкость телефона.";
+        controlHint.Text=cause;
+        control.Text=MediaEnabled?"Выключить управление хостом":"Включить управление хостом";
+        control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
+        control.BackColor=MediaEnabled?Accent:Surface;control.ForeColor=MediaEnabled?Surface:TextColor;
+        if(wasLive!=s.Live){pairOpen=!s.Live;wasLive=s.Live;}
+        RenderPanels();
     }
+    internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
+    protected override void Dispose(bool disposing){if(disposing){timer.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
 }

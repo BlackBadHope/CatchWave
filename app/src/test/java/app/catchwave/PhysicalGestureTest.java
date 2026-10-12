@@ -68,7 +68,7 @@ public class PhysicalGestureTest {
         r=new Rig(0,0);r.taps(2,200);r.quiet(450);r.taps(1,200);r.quiet(700);assertTrue(r.actions.isEmpty());assertTrue(r.dump().contains("trainGaps=1"));
     }
     @Test public void pulseRotationAndDurationRejectionsAreObservable(){
-        Rig r=new Rig(0,0);r.sample(3.2);r.gyro=.95;r.sample(3.2);r.quiet(800);assertTrue(r.actions.isEmpty());assertTrue(r.dump().contains("rejectedRotation=1"));
+        Rig r=new Rig(0,0);r.sample(3.2);r.gyro=.95;r.pose=turn(r.neutral,r.axis,.25);r.sample(3.2);r.quiet(800);assertTrue(r.actions.isEmpty());assertTrue(r.dump().contains("rejectedRotation=1"));
         r=new Rig(0,0);for(int i=0;i<20;i++)r.sample(3.2+i);r.quiet(800);assertTrue(r.actions.isEmpty());assertTrue(r.dump().contains("rejectedDuration=1"));
     }
     @Test public void freshnessResetDropsPendingAndNeutral(){

@@ -3,8 +3,8 @@ package app.catchwave;
 
 /** Android's device-to-world quaternion, relative to a quiet neutral pose. */
 final class RelativeOrientation {
-    private double w,x,y,z,nw,nx,ny,nz,ax,ay,az;private boolean neutral,axisReady;private long last=-1;private int display;
-    void reset(){neutral=false;axisReady=false;last=-1;}
+    private double w,x,y,z,nw,nx,ny,nz,ax,ay,az,pw,px,py,pz;private boolean neutral,axisReady,pulsePose;private long last=-1;private int display;
+    void reset(){neutral=false;axisReady=false;pulsePose=false;last=-1;}
     void display(int rotation){display=rotation;reset();}
     void clearNeutral(){neutral=false;axisReady=false;}
     boolean sample(long t,double a,double b,double c,double d,boolean calibrating){
@@ -24,8 +24,28 @@ final class RelativeOrientation {
         return true;
     }
     boolean fresh(long now){return neutral&&last>=0&&now>=last&&now-last<=150;}
+    boolean hasNeutral(){return neutral;}
     boolean tiltAvailable(){return neutral&&axisReady;}
     long age(long now){return last<0||now<last?-1:now-last;}
+    void beginPulse(){pw=w;px=x;py=y;pz=z;pulsePose=last>=0;}
+    double pulseRotation(){
+        if(!pulsePose)return Double.NaN;
+        // Quaternion distance is sign invariant. A short gyro spike alone is not a turn.
+        double dot=Math.abs(pw*w+px*x+py*y+pz*z);
+        return 2*Math.acos(Math.min(1,dot));
+    }
+    boolean postureChanged(){
+        if(!tiltAvailable())return false;
+        double rw=nw*w+nx*x+ny*y+nz*z;
+        double rx=nw*x-nx*w-ny*z+nz*y;
+        double ry=nw*y+nx*z-ny*w-nz*x;
+        double rz=nw*z-nx*y+ny*x-nz*w;
+        double twist=rx*ax+ry*ay+rz*az;
+        // A held roll is pure twist. Putting the phone down is an off-axis swing;
+        // the old roll axis must not turn that new posture into a volume command.
+        double swing=2*Math.acos(Math.min(1,Math.hypot(rw,twist)));
+        return swing>Math.toRadians(35);
+    }
     double tilt(){
         if(!tiltAvailable())return Double.NaN;
         // conjugate(neutral) * current: every quaternion component participates.

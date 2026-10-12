@@ -8,14 +8,15 @@ internal static class HostUiTest {
         using var form=new HostWindow(identity,"127.0.0.1",49372,true,false,stop,_=>true,false,status);
         var action=(Button)typeof(HostWindow).GetField("control",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         var label=(Label)typeof(HostWindow).GetField("controlStatus",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        var hint=(Label)typeof(HostWindow).GetField("controlHint",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         void Check(bool value){if(!value)throw new Exception("UI state assertion failed");checks++;}
         Check(!action.Enabled&&action.Text=="Включить управление хостом"&&label.Text.StartsWith("Управление выключено"));
         status.Begin();status.Stage(HostStage.Tls);form.Render();Check(!action.Enabled&&label.Text.StartsWith("Управление выключено"));
         status.Frame(0,true);form.Render();Check(!action.Enabled); // Sent silence alone does not confirm phone output.
         status.Client(Protocol.ClientState(1,1,false,false));form.Render();Check(action.Enabled&&action.Text=="Включить управление хостом");
         typeof(HostWindow).GetMethod("SetMedia",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,new object[]{true});
-        Check(action.Enabled&&action.Text=="Выключить управление хостом"&&label.Text.Contains("включите управление на телефоне"));
-        status.Client(Protocol.ClientState(1,1,true,false,1));form.Render();Check(action.Enabled&&label.Text.Contains("заблокировал команды"));
+        Check(action.Enabled&&action.Text=="Выключить управление хостом"&&hint.Text.Contains("включите управление на телефоне"));
+        status.Client(Protocol.ClientState(1,1,true,false,1));form.Render();Check(action.Enabled&&hint.Text.Contains("заблокировал команды"));
         status.Client(Protocol.ClientState(1,2,true,true,1));form.Render();Check(action.Enabled&&action.Text=="Выключить управление хостом"&&label.Text.StartsWith("Управление включено"));
         status.Failure(HostError.PeerClosed);form.Render();Check(action.Enabled&&action.Text=="Выключить управление хостом"&&label.Text.StartsWith("Управление выключено"));
         using var locked=new HostWindow(identity,"127.0.0.1",49373,true,true,stop,_=>throw new Exception("Locked pilot must not save"),true,new HostStatus());

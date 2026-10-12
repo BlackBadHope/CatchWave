@@ -8,5 +8,5 @@ $waveJavaBin=if($env:JAVA_HOME){Join-Path $env:JAVA_HOME 'bin'}else{Split-Path -
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 & dotnet build "$PSScriptRoot\CatchWave.Host\CatchWave.Host.csproj" -c Release "-p:BaseIntermediateOutputPath=$waveBuild\obj\" "-p:OutputPath=$waveBuild\bin\"
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-& "$waveBuild\bin\CatchWave.Host.exe" --interop-test "$waveJavaBin\java.exe" $waveClasses
+& dotnet "$waveBuild\bin\CatchWave.Host.dll" --interop-test "$waveJavaBin\java.exe" $waveClasses
 exit $LASTEXITCODE

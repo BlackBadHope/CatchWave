@@ -6,13 +6,13 @@ Pair by scanning the local Host QR and confirming on the phone. This pins the TL
 
 Enable management in the Host, then on the phone. Effective control needs a connected fresh receiver and matching current permission generation. Stale connections cannot authorize new Windows commands or held volume steps. Saved permission preferences do not activate a disconnected session. Retry a failed session by disconnecting/reconnecting; a Host restart needs a new QR. The UI distinguishes TCP, TLS, pairing, format and output/focus errors without displaying secrets.
 
-**Keep management off outside deliberate use/testing.** Ordinary handling can trigger commands while it is enabled; an owner pickup reduced volume to silence. Version 27 adds timed arming; its reliability still needs physical testing.
+**Keep control off outside deliberate use/testing.** Ordinary handling can trigger commands while it is active. The posture-change neutral guard from versionCode 41 is retained; versionCode 47 uses button-only activation. Reliability still needs physical testing.
 
 ## Gestures
 
-All commands, including local mute, start locked. With both control permissions, fresh audio and accel/gyro/orientation available, hold screen-down within 15 degrees of horizontal for 850 ms. Rotate about 90 degrees (75–105) relative to that pose, either way; stop with gyro at most 0.18 rad/s for 250 ms. Two short vibrations open exactly 10 seconds. No magnetic north/person direction is inferred.
+All commands, including local mute, start locked. With both control permissions, fresh audio and accel/gyro/orientation available, press **«Активировать управление»**. No table reference or activation gesture is required. Two short vibrations and an optional rising tone confirm activation. There is no timer. Press **«Выключить управление»** to turn it off; an optional descending tone confirms this change.
 
-Returning screen-down within 15 degrees of the original heading or a stable horizontal face-up pose suppresses commands while the 150 ms stop dwell is pending, then locks. Leaving the screen-down table posture (22 degree hysteresis) and returning to it require fresh neutral; neither extends the window. Sensor gaps over 150 ms, stale/invalid data, permissions, visibility/session loss and manual neutral reset discard the baseline and pending histories. A baseline expires after 20 seconds without activation.
+Phone position never activates or deactivates the mode. Leaving/entering a flat posture and other large posture changes require fresh neutral and invalidate pending commands while preserving activation. Sensor gaps over 150 ms, stale/invalid data, permission or visibility/session loss, and the explicit reset button turn control off and discard pending histories. Recovered sensors or permissions never reactivate it automatically.
 
 After activation or a posture transition, hold still for 1.5 seconds to set neutral; reset neutral when changing posture. Tilt slowly about 30 degrees and hold. First local volume step: 250 ms; repeats:at most every 400 ms. Return within about 15 degrees to stop. Entry threshold is about 24 degrees, with hysteresis. Direction reversal needs a new stable dwell. A sample gap over 150 ms stops the previous hold; delayed samples never create catch-up bursts. At volume limits/fixed volume, no pointless native adjustments are issued. Native step size varies by device.
 
@@ -20,7 +20,7 @@ Shake or 3 taps:play/pause;4:next;5:previous;6:local mute/restore. Tap gently 0.
 
 Gestures normally need CatchWave visible. Optional screen-off gestures retain sensors in the running foreground service and use a partial wake lock. Battery cost and OEM power management remain experimental. No boot/always-on daemon is installed. Disconnect explicitly to release resources; close the Host to end its Windows session. Bluetooth routes and long screen-off runs need separate measurement.
 
-Diagnostics and export are in **«Дополнительно»** on the phone and in the Host window. See [diagnostic fields and limits](DIAGNOSTICS.md). The manual management switch works even when commands are locked or disconnected.
+Diagnostics and export are in the folded **«Диагностика»** section on the phone and in the Host window. See [diagnostic fields and limits](DIAGNOSTICS.md). Control permissions and the mode button are separate; saved permissions alone do not activate commands.
 
 ## Sound and limits
 
