@@ -18,6 +18,7 @@ internal sealed class HostStatus {
     internal readonly DiagnosticLog Log;private long diagnosticAt=-10000;
     internal HostStatus(DiagnosticLog? log=null){Log=log??new DiagnosticLog();}
     internal event Action? Changed;
+    internal void Listening(){Log.Event("ROUTE","OWNER_SELECTED_INTERFACE");lock(gate){clock.Reset();stage=HostStage.Listening;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
     internal HostSnapshot Snapshot {get {lock(gate)return new(stage,error,failedAt,clock.ElapsedMilliseconds/1000,frames,skipped,output,sensors,wants,effective,clientAt<0?-1:clock.ElapsedMilliseconds-clientAt,clientGeneration);}}
     internal void Begin(){Log.Begin();Log.Event("RECONNECT","PEER_CONNECTED");lock(gate){clock.Restart();diagnosticAt=-10000;reported=-1000;stage=HostStage.Tcp;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
     internal void Stage(HostStage value){Log.Event("STAGE",value.ToString().ToUpperInvariant());lock(gate){if(error!=HostError.None)return;stage=value;}Changed?.Invoke();}

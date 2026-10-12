@@ -8,6 +8,7 @@ internal sealed class HostButton:Button {
     protected override void OnMouseEnter(EventArgs e){hover=true;Invalidate();base.OnMouseEnter(e);}
     protected override void OnMouseLeave(EventArgs e){hover=false;Invalidate();base.OnMouseLeave(e);}
     protected override void OnPaint(PaintEventArgs e){
+        e.Graphics.Clear(Parent?.BackColor??HostWindow.Surface);
         e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         var r=new RectangleF(1,1,Width-3,Height-3);float d=Math.Min(24,r.Height);
         using var path=new GraphicsPath();path.AddArc(r.X,r.Y,d,d,180,90);path.AddArc(r.Right-d,r.Y,d,d,270,90);path.AddArc(r.Right-d,r.Bottom-d,d,d,0,90);path.AddArc(r.X,r.Bottom-d,d,d,90,90);path.CloseFigure();

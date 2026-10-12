@@ -2,7 +2,7 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current Android source: **0.1.31-unified-ui, versionCode 49**; Windows Host **0.1.31-desktop**. Both use one dark green visual system. The home screen opens either PC audio/gesture control or nearby-music recognition. Scan and connect/disconnect stay at the top of the PC-audio screen. Scanning during playback first asks to stop the session. Activation uses only a button, with no table pose or rotation prerequisite.
+Current Android source: **0.1.31-unified-ui, versionCode 49**; Windows Host **0.1.32-desktop-usb**. Both use one dark green visual system. The home screen opens either PC audio/gesture control or nearby-music recognition. Scan and connect/disconnect stay at the top of the PC-audio screen. Scanning during playback first asks to stop the session. Activation uses only a button, with no table pose or rotation prerequisite.
 
 This release includes asynchronous TLS disconnect/cancellation, protection against a late refresh restarting a stopped session, background audio/power handling, bounded clock correction and continuity across small frame gaps. A delayed first orientation sample now starts a fresh neutral-calibration window. Permission, freshness, posture and accidental-input guards remain enabled. Previous physical checks confirmed audible audio and commands on one phone; automated tests and short listening checks do not establish long-term wireless reliability, battery life or AudioRelay parity.
 
@@ -12,7 +12,7 @@ Download the Android APK and portable Windows Host from [Releases](https://githu
 
 ## Windows audio and gesture remote
 
-The portable Windows Host captures the **current default multimedia output** with WASAPI loopback and streams PCM over pinned TLS on a local network. Android plays it through its media output. The Host installs no audio driver, service, autostart entry, certificate trust or firewall rule. A separate CatchWave Windows audio endpoint is not implemented. AudioRelay feature/quality parity has not been established; AudioRelay code, binaries and private protocol are not used.
+The portable Windows Host captures the **current default multimedia output** with WASAPI loopback and streams PCM over pinned TLS on a local network. Android plays it through its media output. The Host installs no audio driver, service, autostart entry, certificate trust or firewall rule. A separate CatchWave Windows audio endpoint is not installed or release-ready yet; a pinned SysVAD-derived development profile is in [windows/driver](windows/driver/README.md), pending WDK build, validation and Microsoft signing. AudioRelay feature/quality parity has not been established; AudioRelay code, binaries and private protocol are not used.
 
 | Gesture | Action |
 | --- | --- |
@@ -26,7 +26,7 @@ The portable Windows Host captures the **current default multimedia output** wit
 Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor samples are required; missed samples do not queue delayed volume steps. Native Android steps determine the increment. Windows keys depend on the active player's supported actions. A command ACK confirms dispatch, not a successful player transition.
 
 1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
-2. On a trusted shared LAN, start `CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372`.
+2. On a trusted shared LAN or with Android USB tethering enabled, start `CatchWave.Host.exe --listen auto --port 49372` (or an explicit PC IPv4 address).
 3. Open **«Звук с ПК»** on the phone, scan the locally displayed Host QR, confirm pairing and press **«Подключиться»**. Grant Camera for scanning and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. Restarting the Host requires a new scan.
 4. Allow control explicitly in the Host and on the phone, enable **«Разрешить жесты»**, then press **«Активировать управление»**. No prior pose or turn is needed. Two short vibrations and an optional rising tone indicate activation. Press **«Выключить управление»** to turn it off; the optional descending tone follows deactivation. There is no mode timer and phone position does not activate or deactivate it. Permission, sensor and session faults still turn control off.
 5. Hold the phone screen toward you, top edge up, still for 1.5 seconds to set neutral. Posture/display changes require fresh neutral without closing the mode. **«Сбросить активацию и нейтраль»** turns control off and requires the button again. Tilt slowly about 30 degrees and hold. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.

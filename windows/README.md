@@ -1,6 +1,6 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.31-desktop**, compatible with Android **0.1.31-unified-ui/versionCode 49** source in this tree; no protocol or Host runtime change is required. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling, endpoint selector, separate audio driver or automatic route switch is implemented.
+Portable .NET 9 Windows desktop Host **0.1.32-desktop-usb**, compatible with Android **0.1.31-unified-ui/versionCode 49** source in this tree; the existing Android receiver works over LAN and USB-tethering IP without an APK update. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling or audio endpoint selector is implemented. Network selection is available in Host. A separate audio-driver development profile is included, but no virtual audio device is installed by the portable Host.
 
 ## Build
 
@@ -42,3 +42,13 @@ The Host keeps the last 256 metadata events under local application data in `Cat
 The native dark window shows connection/audio state and the independent control permission. A live session hides its private pairing QR; **Подключить телефон** shows it again. **Диагностика** opens the counters, certificate information, bounded journal and export. Receiving frames is not proof of audibility. A saved-permission write failure remains visible in the main window.
 
 The app opens without a console window. For terminal diagnostics use `dotnet CatchWave.Host.dll --help` or `dotnet CatchWave.Host.dll --self-test`. `dotnet CatchWave.Host.dll --ui-preview <directory>` renders the actual WinForms controls using an inert public QR fixture. Preview mode has no listener, WASAPI capture, real keys or saved preferences; its images are safe examples, not physical acceptance.
+
+## USB tethering and network selection
+
+Connect the Android phone by USB-C and enable its existing USB tethering mode. Start Host with `--listen auto`: it prefers a recognized RNDIS/USB-NCM tethering adapter, falling back to an active private LAN IPv4 address. It binds one specific interface, never `0.0.0.0`. Hyper-V/virtual and link-local adapters are excluded from auto selection. An explicit `--listen <IPv4>` remains supported.
+
+The connection button in Host lists current eligible interfaces. Selecting another route stops the current audio session after confirmation, updates the local QR and requires pairing with that QR. A bind failure preserves the old listener. Reopen the menu to refresh the adapter list. Unplug/replug or DHCP changes may require selecting a new address and reconnecting; no seamless route handover is promised.
+
+Scan the Host QR in CatchWave as usual. The cable carries the IP/TLS audio stream through Windows' existing USB network driver; no ADB, new phone driver, USB-function replacement or home Wi-Fi is needed for this data path. Physical USB listening and cable reconnect still require device acceptance; loopback tests are not that acceptance.
+
+The window limits content width and height even when maximized, and uses one content container for pairing, commands and diagnostics. PC permission and phone gesture readiness are separate states. Changing the network never grants control permission or auto-activates Android gestures.

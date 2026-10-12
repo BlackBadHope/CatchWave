@@ -25,10 +25,12 @@ internal sealed class HostWindow:Form {
     private readonly Button control=Button(""),revoke=Button("Отозвать разрешение ПК");
     private readonly bool locked;private readonly Func<bool,bool> save;
     private readonly PictureBox picture=new(),guide=new();
-    private readonly Panel pairing=new(),diagnostics=new(),commands=new();
+    private readonly Panel pairing=new(),diagnostics=new(),commands=new(),content=new();
+    private readonly Button network=Button("");
+    private readonly Label privacy=Label(9);
     private readonly Button pairAction=Button(""),diagnosticAction=Button("Диагностика");
     private readonly Label details=Label(10);
-    private readonly string endpoint,fingerprint;
+    private string endpoint;private readonly string fingerprint;
     private bool pairOpen=true,diagnosticOpen;
     private bool? wasLive;
     private readonly System.Windows.Forms.Timer timer=new(){Interval=500};
@@ -42,14 +44,16 @@ internal sealed class HostWindow:Form {
     internal HostWindow(string pairCode,string certificate,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status){
         model=status;locked=lockedOff;this.save=save;permission=new(enabled&&!lockedOff,0);
         endpoint=$"{address}:{port}";fingerprint=certificate;
-        Text="CatchWave Host";ClientSize=new Size(940,650);MinimumSize=new Size(950,690);
+        Text="CatchWave Host";ClientSize=new Size(1000,730);MinimumSize=SizeFromClientSize(new Size(980,730));
         StartPosition=FormStartPosition.CenterScreen;BackColor=Surface;ForeColor=TextColor;
         Font=new Font("Segoe UI",11);AutoScaleMode=AutoScaleMode.Dpi;DoubleBuffered=true;
         using(var brandIcon=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.brand.ico")!){var icon=new Icon(brandIcon);Icon=icon;assets.Add(icon);}
 
-        var page=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(28,20,28,20),ColumnCount=1,RowCount=3,BackColor=Surface};
+        var page=new TableLayoutPanel{Padding=new Padding(28,20,28,20),ColumnCount=1,RowCount=3,BackColor=Surface};
         page.RowStyles.Add(new RowStyle(SizeType.Absolute,54));page.RowStyles.Add(new RowStyle(SizeType.Percent,100));page.RowStyles.Add(new RowStyle(SizeType.Absolute,50));
         Controls.Add(page);
+        void FitPage(){float scale=DeviceDpi/96f;page.Size=new Size(Math.Min(ClientSize.Width,(int)(1040*scale)),Math.Min(ClientSize.Height,(int)(740*scale)));page.Location=new Point((ClientSize.Width-page.Width)/2,(ClientSize.Height-page.Height)/2);}
+        ClientSizeChanged+=(_,_)=>FitPage();Shown+=(_,_)=>FitPage();FitPage();
         var top=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,240));
         var brand=Label(19,true);brand.Text="CatchWave  Host";brand.ForeColor=Accent;
@@ -57,45 +61,48 @@ internal sealed class HostWindow:Form {
         top.Controls.Add(brand,0,0);top.Controls.Add(badge,1,0);page.Controls.Add(top,0,0);
 
         var columns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty,BackColor=Surface};
-        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,310));
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,350));
         page.Controls.Add(columns,0,1);
-        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=new Padding(0,8,30,0),AutoScroll=true};
+        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=Padding.Empty,AutoScroll=true,BackColor=HostCard.Fill};
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,54));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,70));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,158));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,66));
         left.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
-        var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Основной аудиовыход Windows\nПередача звука на телефон";
-        source.Dock=DockStyle.Fill;left.Controls.Add(source,0,1);
+        var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Подключение к телефону";
+        var sourcePanel=new Panel{Dock=DockStyle.Fill};source.Dock=DockStyle.Top;
+        network.Dock=DockStyle.Bottom;network.Text=new HostEndpoint(address,"Current").ToString();
+        network.AccessibleName="Подключение через USB-модем или локальную сеть";
+        sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(network);left.Controls.Add(sourcePanel,0,1);
         controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
-        guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;
+        guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;guide.BackColor=Color.Transparent;
         using(var asset=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.tilt.png")!){using var img=Image.FromStream(asset);guide.Image=new Bitmap(img);assets.Add(guide.Image);}
         left.Controls.Add(guide,0,3);
         control.Dock=DockStyle.Fill;left.Controls.Add(control,0,4);
         controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,5);
         var warning=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};
         saving.MaximumSize=new Size(480,0);reason.MaximumSize=new Size(480,0);warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,6);
-        columns.Controls.Add(left,0,0);
+        var leftCard=new HostCard{Dock=DockStyle.Fill,Margin=new Padding(0,8,20,0)};leftCard.Controls.Add(left);columns.Controls.Add(leftCard,0,0);
 
-        var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=new Padding(0,8,0,0)};
+        var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=Padding.Empty,BackColor=HostCard.Fill};
         right.RowStyles.Add(new RowStyle(SizeType.Absolute,38));right.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         right.RowStyles.Add(new RowStyle(SizeType.Absolute,42));right.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
         pairAction.Dock=DockStyle.Fill;pairAction.Click+=(_,_)=>{pairOpen=!pairOpen;RenderPanels();};right.Controls.Add(pairAction,0,0);
         pairing.Dock=DockStyle.Fill;
         var pairLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Padding=new Padding(4,12,4,4)};
-        pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,280));pairLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,32));pairLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,62));
         var scan=Label(11);scan.Text="Сканируйте QR в CatchWave";scan.TextAlign=ContentAlignment.MiddleCenter;scan.Dock=DockStyle.Fill;
         using(var bytes=new MemoryStream(PairingQr.Png(pairCode,4)))using(var img=Image.FromStream(bytes)){picture.Image=new Bitmap(img);assets.Add(picture.Image);}
         picture.Dock=DockStyle.Fill;picture.SizeMode=PictureBoxSizeMode.CenterImage;picture.BackColor=Color.White;
-        var privacy=Label(9);privacy.Text="QR приватен. После перезапуска Host\nнужно снова отсканировать новый QR.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
+        privacy.Text="QR приватен. После перезапуска Host\nотсканируйте новый QR на телефоне.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
         pairLayout.Controls.Add(scan,0,0);pairLayout.Controls.Add(picture,0,1);pairLayout.Controls.Add(privacy,0,2);pairing.Controls.Add(pairLayout);
-        right.Controls.Add(pairing,0,1);
+        content.Dock=DockStyle.Fill;content.Controls.Add(pairing);right.Controls.Add(content,0,1);
         phone.Dock=DockStyle.Fill;phone.MaximumSize=new Size(300,0);right.Controls.Add(phone,0,2);
         diagnosticAction.Dock=DockStyle.Fill;diagnosticAction.Click+=(_,_)=>{diagnosticOpen=!diagnosticOpen;RenderPanels();};right.Controls.Add(diagnosticAction,0,3);
-        columns.Controls.Add(right,1,0);
+        var rightCard=new HostCard{Dock=DockStyle.Fill,Margin=new Padding(0,8,0,0)};rightCard.Controls.Add(right);columns.Controls.Add(rightCard,1,0);
 
         // Diagnostics replace the QR area, avoiding an ever-growing main window.
         diagnostics.Dock=DockStyle.Fill;
@@ -106,7 +113,7 @@ internal sealed class HostWindow:Form {
         var export=Button("Экспорт диагностики");export.Width=284;export.Click+=(_,_)=>ExportLog();
         revoke.Width=284;revoke.Click+=(_,_)=>SetMedia(false);
         foreach(Control item in new Control[]{statistics,details,logs,export,revoke})diagnosticLayout.Controls.Add(item);
-        diagnostics.Controls.Add(diagnosticLayout);right.Controls.Add(diagnostics,0,1);
+        diagnostics.Controls.Add(diagnosticLayout);content.Controls.Add(diagnostics);
         commands.Dock=DockStyle.Fill;
         var commandLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=3,Padding=new Padding(10,40,10,30)};
         commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
@@ -115,11 +122,11 @@ internal sealed class HostWindow:Form {
         string[] captions={"Пауза / старт","Следующий","Предыдущий","Звук телефона"};
         for(int i=0;i<4;i++){var cell=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,Padding=new Padding(4,6,4,6)};
             var count=Label(32,true);count.Text=(i+3).ToString();count.ForeColor=Accent;var caption=Label(10);caption.Text=captions[i];cell.Controls.Add(count);cell.Controls.Add(caption);commandLayout.Controls.Add(cell,i%2,1+i/2);}
-        commands.Controls.Add(commandLayout);right.Controls.Add(commands,0,1);
+        commands.Controls.Add(commandLayout);content.Controls.Add(commands);
 
         var footer=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=new Padding(0,8,0,0)};
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,270));
-        var note=Label(9);note.Text="Звук и управление работают независимо";note.Dock=DockStyle.Fill;note.TextAlign=ContentAlignment.MiddleLeft;
+        var note=Label(9);note.Text=synthetic?"Тестовый источник: тишина":"Звук: основной аудиовыход Windows";note.Dock=DockStyle.Fill;note.TextAlign=ContentAlignment.MiddleLeft;
         var close=Button("Отключить и закрыть Host");close.Dock=DockStyle.Fill;close.Click+=(_,_)=>Close();
         footer.Controls.Add(note,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
 
@@ -139,6 +146,7 @@ internal sealed class HostWindow:Form {
     private void RenderPanels(){
         pairing.Visible=pairOpen&&!diagnosticOpen;diagnostics.Visible=diagnosticOpen;
         commands.Visible=!pairOpen&&!diagnosticOpen;
+        (diagnosticOpen?diagnostics:pairOpen?pairing:commands).BringToFront();
         pairAction.Text=pairOpen?"Скрыть QR":"Подключить телефон";
         diagnosticAction.Text=diagnosticOpen?"Закрыть диагностику":"Диагностика";
     }
@@ -172,16 +180,45 @@ internal sealed class HostWindow:Form {
         statistics.Text=$"Сеанс: {s.Seconds} с\nОтправлено кадров: {s.Frames}\nПропущено интервалов: {s.Skipped}\nКод: {s.Error} · этап: {s.FailedAt}\nПоследняя причина: {model.Log.LastReason}\nОшибок журнала: {model.Log.StorageFailures}";
         phone.Text=!fresh?"Вывод телефона не подтверждён":s.ClientOutput switch {0=>"Ожидаем вывод телефона",1=>"Телефон принимает тишину",_=>"Телефон принимает звук"};
         bool effective=s.Effective(MediaEnabled,Permission.Generation);
-        controlStatus.Text=effective?"Управление включено":"Управление выключено";
+        controlStatus.Text=effective?"Жесты готовы":!s.Live?"Ожидаем телефон":!MediaEnabled?"Нет разрешения ПК":"Активируйте на телефоне";
         controlStatus.ForeColor=effective?Accent:TextColor;
         string cause=locked?"Команды заблокированы флагом запуска":!MediaEnabled?"Разрешение ПК выключено":!fresh||s.ClientOutput==0?"Разрешение ПК включено. Подключите телефон.":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активируйте управление кнопкой и держите спокойно 1,5 секунды":"Жесты готовы на телефоне. Наклон меняет громкость телефона.";
         controlHint.Text=cause;
-        control.Text=MediaEnabled?"Выключить управление хостом":"Включить управление хостом";
+        control.Text=MediaEnabled?"Разрешение ПК включено · выключить":"Разрешить управление на ПК";
         control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
         control.BackColor=MediaEnabled?Accent:Surface;control.ForeColor=MediaEnabled?Surface:TextColor;
         if(wasLive!=s.Live){pairOpen=!s.Live;wasLive=s.Live;}
         RenderPanels();
     }
     internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
+    internal void ConfigureNetworks(HostEndpoint current,Func<HostEndpoint,Task> select,Func<string,string> pairCode,Func<IReadOnlyList<HostEndpoint>> available,int port){
+        network.Text=current.ToString();
+        network.Click+=(_,_)=>{
+            var menu=new ContextMenuStrip{BackColor=Surface,ForeColor=TextColor,Font=Font};
+            foreach(var next in available()){
+                var item=new ToolStripMenuItem(next.ToString()){Checked=next.Address==current.Address};
+                item.Click+=async(_,_)=>{
+                    if(next.Address==current.Address)return;
+                    if(model.Snapshot.Live&&MessageBox.Show(this,"Звук остановится. После смены подключения отсканируйте QR снова.","Сменить подключение?",MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
+                    network.Enabled=false;
+                    try{await select(next);current=next;network.Text=current.ToString();endpoint=$"{next.Address}:{port}";details.Text=$"Адрес: {endpoint}\nСертификат SHA-256:\n{fingerprint}";
+                        using var bytes=new MemoryStream(PairingQr.Png(pairCode(next.Address),4));using var image=Image.FromStream(bytes);var replacement=new Bitmap(image);
+                        var previous=picture.Image;picture.Image=replacement;if(previous!=null){assets.Remove(previous);previous.Dispose();}assets.Add(replacement);
+                        pairOpen=true;diagnosticOpen=false;Render();
+                    }catch(Exception e)when(e is System.Net.Sockets.SocketException or ArgumentException){MessageBox.Show(this,"Адрес недоступен. Проверьте USB-модем или локальную сеть.","CatchWave");}
+                    catch(OperationCanceledException){}finally{if(!IsDisposed)network.Enabled=true;}
+                };menu.Items.Add(item);
+            }
+            if(menu.Items.Count==0)menu.Items.Add(new ToolStripMenuItem("Подключите USB-модем или локальную сеть"){Enabled=false});
+            menu.Closed+=(_,_)=>menu.Dispose();menu.Show(network,new Point(0,network.Height));
+        };
+    }
+    internal void AssertLayout(){
+        if(Controls[0].Width>1040*DeviceDpi/96f||Controls[0].Height>740*DeviceDpi/96f)throw new Exception("Content stretched beyond readable size");
+        if(pairing.Parent!=diagnostics.Parent||pairing.Parent!=commands.Parent||pairing.Parent is TableLayoutPanel)throw new Exception("Content panels must share one overlay container");
+        if(pairing.Visible&&(privacy.Height<privacy.GetPreferredSize(new Size(privacy.Width,0)).Height||picture.Height<picture.Image!.Height||picture.Width<picture.Image.Width))throw new Exception("QR or privacy text clipped");
+        if(phone.Bottom>phone.Parent!.ClientSize.Height||diagnosticAction.Bottom>diagnosticAction.Parent!.ClientSize.Height)throw new Exception("Right column overflow");
+    }
+    internal Bitmap RenderClient(){using var contentBitmap=new Bitmap(Controls[0].Width,Controls[0].Height);Controls[0].DrawToBitmap(contentBitmap,new Rectangle(Point.Empty,Controls[0].Size));var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height);using var graphics=Graphics.FromImage(bitmap);graphics.Clear(Surface);graphics.DrawImageUnscaled(contentBitmap,Controls[0].Location);return bitmap;}
     protected override void Dispose(bool disposing){if(disposing){timer.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
 }

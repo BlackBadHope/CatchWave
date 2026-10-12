@@ -113,25 +113,26 @@ internal static class Program {
         if(args.Length==3&&args[0]=="--interop-test")return InteropTest.Run(args[1],args[2]).GetAwaiter().GetResult();
         if(args.SequenceEqual(new[]{"--self-test"}))return SelfTest.Run().GetAwaiter().GetResult();
         if(args.Length==3&&args[0]=="--self-test"&&args[1]=="--qr-fixture")return SelfTest.Run(args[2]).GetAwaiter().GetResult();
-        if(args.Contains("--help")||args.Length==0){Console.WriteLine("CatchWave Host QR prototype.\n--listen IPv4 [--port 49372] [--synthetic] [--disable-media-keys | --enable-media-keys]\nDefault: loopback only. LAN binding requires an explicit address.\nPair using the local QR window; media control uses the saved owner checkbox choice.\n--disable-media-keys: force off for this pilot without changing the saved preference.\n--enable-media-keys: explicit session-only override.\n--self-test: bounded loopback TLS, synthetic silence, fake key sink, no capture.\nNo installation, autostart, discovery or firewall changes.");return 0;}
+        if(args.Contains("--help")||args.Length==0){Console.WriteLine("CatchWave Host\n--listen IPv4|auto [--port 49372] [--synthetic] [--disable-media-keys | --enable-media-keys]\nauto: prefer USB tethering, otherwise an active private LAN address. The Host window can switch routes.\nDefault: loopback only. No wildcard bind, driver installation, autostart or firewall changes.\n--self-test: bounded loopback TLS, synthetic silence, fake key sink, no capture.");return 0;}
         string address="127.0.0.1";int port=49372;bool synthetic=false,media=false,mediaLockedOff=false;
         try {for(int i=0;i<args.Length;i++)switch(args[i]){
             case "--listen":address=args[++i];break;case "--port":port=int.Parse(args[++i]);break;
             case "--synthetic":synthetic=true;break;case "--enable-media-keys":media=true;break;case "--disable-media-keys":mediaLockedOff=true;break;default:throw new ArgumentException();
         }
-        if(!IPAddress.TryParse(address,out IPAddress? ip)||ip.AddressFamily!=AddressFamily.InterNetwork||IPAddress.Any.Equals(ip)||port<1024||port>65535)throw new ArgumentException();
+        var endpoints=HostNetwork.Available();var chosen=HostNetwork.Choose(address,endpoints);address=chosen.Address;
+        if(port<1024||port>65535)throw new ArgumentException();
         using var identity=new HostIdentity();using var stop=new CancellationTokenSource();
-        Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};var listener=new TcpListener(ip,port);listener.Start(1);
+        Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         var preferences=HostControlSettings.Local();
         using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
-        Task server=Task.Run(async()=>{
-            try {while(!stop.IsCancellationRequested){
-                TcpClient peer=await listener.AcceptTcpClientAsync(stop.Token);
-                try {await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,stop.Token);}catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){if(!stop.IsCancellationRequested)state.Failure(HostStatus.Classify(e,state.Snapshot.Stage));}
-            }}catch(OperationCanceledException){}finally{listener.Stop();}
+        var server=new HostListener(stop.Token,async(peer,token)=>{
+            try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,token);}
+            catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){if(!token.IsCancellationRequested)state.Failure(HostStatus.Classify(e,state.Snapshot.Stage));}
         });
-        try{Application.Run(window);}finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();server.GetAwaiter().GetResult();}return 0;
-        }catch(ArgumentException){Console.Error.WriteLine("Invalid arguments. Use --help.");return 2;}
+        try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);Application.Run(window);}
+        finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
+        }catch(SocketException e)when(e.SocketErrorCode==SocketError.AddressAlreadyInUse){MessageBox.Show("CatchWave Host уже работает на этом адресе. Перед запуском новой версии закройте его текущее окно.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Information);return 2;}
+        catch(Exception e)when(e is ArgumentException or SocketException){Console.Error.WriteLine("Host address unavailable. Use --listen auto or an active IPv4 address.");MessageBox.Show("Не удалось открыть адрес Host. Подключите USB-модем или локальную сеть и запустите ярлык снова.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 2;}
     }
 }
