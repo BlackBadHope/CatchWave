@@ -13,6 +13,10 @@ internal static class UsbTest {
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();
         try{await UsbAccessory.Open(new UsbAccessory.Phone(default),cancelled.Token);throw new Exception("Cancelled USB selection reached driver");}catch(OperationCanceledException){checks++;}
         if(UsbAccessory.DriverError(2)!="USB_DRIVER_RESTART_REQUIRED"||UsbAccessory.DriverError(5)!="USB_DRIVER_ACCESS_DENIED"||UsbAccessory.DriverError(32)!="USB_DRIVER_BUSY")throw new Exception("USB error must distinguish installation from denied access and busy control device");checks++;
+        var transfer=typeof(UsbAccessory).GetNestedType("Transfer",System.Reflection.BindingFlags.NonPublic)!;
+        if(Marshal.SizeOf(transfer)!=72||Marshal.OffsetOf(transfer,"Bytes")!=48)throw new Exception("UsbDk transfer ABI");checks++;
+        if(UsbAccessory.TransferError(true,0x80000300,2,10)!="USB_NATIVE_INVALID_PARAMETER"||UsbAccessory.TransferError(true,0xffffffff80000300,2,10)!="USB_NATIVE_INVALID_PARAMETER")throw new Exception("Signed native status must preserve the invalid-parameter cause");checks++;
+        if(UsbAccessory.TransferError(true,0,19,18)!="USB_TRANSFER_BOUNDS"||UsbAccessory.TransferError(false,0,2,10)!="USB_TRANSFER_FAILED"||UsbAccessory.TransferError(true,0,2,10)!=null)throw new Exception("USB completion contract");checks++;
         return checks;
     }
 }

@@ -13,7 +13,7 @@ internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus
         worker=Task.Run(async()=>{
             var state=new HostStatus(lan.Log);
             try{
-                using Stream pipe=await UsbAccessory.Open(selected,token);
+                using Stream pipe=await UsbAccessory.Open(selected,token,(code,values)=>state.Log.Event("USB",code,values));
                 using(var setup=CancellationTokenSource.CreateLinkedTokenSource(token)){
                     setup.CancelAfter(TimeSpan.FromSeconds(90));
                     await Bootstrap(pipe,identity.PairCode(address(),port),setup.Token);

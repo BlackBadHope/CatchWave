@@ -8,6 +8,7 @@ namespace CatchWave.Host;
 
 /** AOA data path. No adb process, developer setting, tethering or device-driver replacement. */
 internal static class UsbAccessory {
+    internal delegate void ProgressSink(string code,params long[] values);
     internal sealed record Phone(DeviceInfo Info) {
         internal bool Accessory=>Info.Descriptor.Vendor==0x18d1&&Info.Descriptor.Product is 0x2d00 or 0x2d01;
         public override string ToString()=>Accessory?"Android · USB":"Android · USB ("+Info.Descriptor.Vendor.ToString("X4")+")";
@@ -55,35 +56,40 @@ internal static class UsbAccessory {
     internal static string DriverError(int code)=>code switch{2=>"USB_DRIVER_RESTART_REQUIRED",5=>"USB_DRIVER_ACCESS_DENIED",32=>"USB_DRIVER_BUSY",_=>"USB_ENUMERATION_FAILED"};
     private static int ControlOpenError(){using var file=Native.OpenControl("\\\\.\\UsbDk",0xc0000000,0,0,3,0,0);return file.IsInvalid?Marshal.GetLastPInvokeError():0;}
     private sealed class Device:SafeHandleZeroOrMinusOneIsInvalid {
-        internal Device(DeviceId id):base(true){SetHandle(Native.Redirect(ref id));if(IsInvalid)throw new IOException("USB_OPEN_FAILED");}
+        internal readonly ProgressSink? Progress;
+        internal Device(DeviceId id,ProgressSink? progress=null):base(true){Progress=progress;SetHandle(Native.Redirect(ref id));int error=Marshal.GetLastPInvokeError();if(IsInvalid){progress?.Invoke("USB_OPEN_FAILED",error);throw new IOException(error==1167?"USB_DEVICE_NOT_READY":"USB_OPEN_FAILED");}}
         protected override bool ReleaseHandle()=>Native.Stop(handle);
     }
-    internal static async Task<Stream> Open(Phone selected,CancellationToken stop){
+    internal static async Task<Stream> Open(Phone selected,CancellationToken stop,ProgressSink? progress=null){
         stop.ThrowIfCancellationRequested();Load();
         // Reject stale selections; never substitute a different phone or try every attached USB device.
         var phone=Phones().SingleOrDefault(p=>p.Info.Id.Device==selected.Info.Id.Device&&p.Info.Id.Instance==selected.Info.Id.Instance)
             ??throw new IOException("USB_PHONE_REMOVED");
         if(!phone.Accessory){
-            using(var device=new Device(phone.Info.Id)){
+            // StopRedirect resets the selected USB port. Keep the negotiation handle until the
+            // old device has disappeared and the accessory identity is actually enumerated.
+            progress?.Invoke("USB_SELECTED_PHONE",phone.Info.Descriptor.Vendor,phone.Info.Descriptor.Product,unchecked((long)phone.Info.Port));
+            using var device=new Device(phone.Info.Id,progress);progress?.Invoke("USB_NEGOTIATION_OPEN");
                 byte[] protocol=await Task.Run(()=>Control(device,0xc0,51,0,2,null,stop),stop);
                 if(protocol.Length!=2||BinaryPrimitives.ReadUInt16LittleEndian(protocol)<1)throw new IOException("USB_AOA_UNSUPPORTED");
                 string[] identity={"CatchWave","CatchWave Host","PC audio and optional media control","1","https://github.com/BlackBadHope/CatchWave","CW-local"};
                 for(ushort i=0;i<identity.Length;i++){byte[] text=Encoding.UTF8.GetBytes(identity[i]+"\0");await Task.Run(()=>Control(device,0x40,52,i,0,text,stop),stop);}
-                await Task.Run(()=>Control(device,0x40,53,0,0,null,stop),stop);
-            }
+                await Task.Run(()=>Control(device,0x40,53,0,0,null,stop),stop);progress?.Invoke("USB_AOA_START_SENT");
             // Protocol re-enumeration, bounded to eight seconds; topology must remain the selected port.
             var deadline=DateTime.UtcNow.AddSeconds(8);Phone? next=null;
             while(DateTime.UtcNow<deadline){stop.ThrowIfCancellationRequested();next=Phones().SingleOrDefault(p=>p.Accessory&&p.Info.Filter==phone.Info.Filter&&p.Info.Port==phone.Info.Port);
                 if(next!=null)break;await Task.Delay(150,stop);
             }
             phone=next??throw new IOException("USB_AOA_REENUMERATION_TIMEOUT");
+            progress?.Invoke("USB_ACCESSORY_ENUMERATED");
         }
         var request=new ConfigRequest{Id=phone.Info.Id};
         if(!Native.Config(ref request,out nint descriptor,out uint length))throw new IOException("USB_CONFIG_FAILED");
         (byte input,byte output) endpoints;
         try {if(length>65535||length<9)throw new IOException("USB_CONFIG_INVALID");byte[] bytes=new byte[length];Marshal.Copy(descriptor,bytes,0,bytes.Length);endpoints=Endpoints(bytes);}
         finally{Native.ReleaseConfig(descriptor);}
-        stop.ThrowIfCancellationRequested();var opened=new Device(phone.Info.Id);
+        stop.ThrowIfCancellationRequested();var opened=new Device(phone.Info.Id,progress);
+        progress?.Invoke("USB_ACCESSORY_OPENED");
         if(stop.IsCancellationRequested){opened.Dispose();stop.ThrowIfCancellationRequested();}
         return new BulkStream(opened,endpoints.input,endpoints.output);
     }
@@ -113,15 +119,21 @@ internal static class UsbAccessory {
             nint system=Native.SystemHandle(device.DangerousGetHandle());
             using var cancellation=stop.Register(()=>Native.Cancel(system,overlap));
             int started=read?Native.Read(device.DangerousGetHandle(),request,overlap):Native.Write(device.DangerousGetHandle(),request,overlap);
-            if(started==0)throw new IOException("USB_TRANSFER_FAILED");
+            int startError=Marshal.GetLastPInvokeError();
+            if(type==0)device.Progress?.Invoke("USB_CONTROL_SUBMITTED",started,startError);
+            if(started==0){device.Progress?.Invoke("USB_IO_START_FAILED",startError);throw new IOException("USB_TRANSFER_FAILED");}
             // Cancellation before submission must also cancel the newly submitted request.
             if(stop.IsCancellationRequested)Native.Cancel(system,overlap);
             bool complete=started==1||Native.Result(system,overlap,out _,true);stop.ThrowIfCancellationRequested();
+            int completionError=Marshal.GetLastPInvokeError();
             transfer=Marshal.PtrToStructure<Transfer>(request);
-            if(!complete||transfer.Status!=0||transfer.Bytes>(ulong)length)throw new IOException("USB_TRANSFER_FAILED");
+            if(type==0)device.Progress?.Invoke("USB_CONTROL_COMPLETED",complete?1:0,unchecked((uint)transfer.Status),unchecked((long)transfer.Bytes),completionError);
+            string? failure=TransferError(complete,transfer.Status,transfer.Bytes,length);
+            if(failure!=null){device.Progress?.Invoke(failure,unchecked((uint)transfer.Status),completionError);throw new IOException(failure);}
             return checked((int)transfer.Bytes);
         }finally{if(pinned.IsAllocated)pinned.Free();Marshal.FreeHGlobal(request);Marshal.FreeHGlobal(overlap);if(lease)device.DangerousRelease();}
     }
+    internal static string? TransferError(bool complete,ulong status,ulong actual,int length)=>!complete?"USB_TRANSFER_FAILED":unchecked((uint)status)==0x80000300?"USB_NATIVE_INVALID_PARAMETER":status!=0?"USB_TRANSFER_FAILED":actual>(ulong)length?"USB_TRANSFER_BOUNDS":null;
     private sealed class BulkStream(Device device,byte input,byte output):Stream {
         private readonly CancellationTokenSource stop=new();private int closed;
         private readonly byte[] incoming=new byte[65536];private int position,available;private readonly SemaphoreSlim reader=new(1);
@@ -142,12 +154,12 @@ internal static class UsbAccessory {
         [DllImport("kernel32.dll",EntryPoint="CreateFileW",CharSet=CharSet.Unicode,SetLastError=true)] internal static extern SafeFileHandle OpenControl(string name,uint access,uint share,nint security,uint disposition,uint flags,nint template);
         [DllImport(Dll,EntryPoint="UsbDk_GetDevicesList")] [return:MarshalAs(UnmanagedType.Bool)] internal static extern bool List(out nint list,out uint count);
         [DllImport(Dll,EntryPoint="UsbDk_ReleaseDevicesList")] internal static extern void ReleaseList(nint list);
-        [DllImport(Dll,EntryPoint="UsbDk_StartRedirect")] internal static extern nint Redirect(ref DeviceId id);
+        [DllImport(Dll,EntryPoint="UsbDk_StartRedirect",SetLastError=true)] internal static extern nint Redirect(ref DeviceId id);
         [DllImport(Dll,EntryPoint="UsbDk_StopRedirect")] [return:MarshalAs(UnmanagedType.Bool)] internal static extern bool Stop(nint device);
         [DllImport(Dll,EntryPoint="UsbDk_GetConfigurationDescriptor")] [return:MarshalAs(UnmanagedType.Bool)] internal static extern bool Config(ref ConfigRequest request,out nint bytes,out uint length);
         [DllImport(Dll,EntryPoint="UsbDk_ReleaseConfigurationDescriptor")] internal static extern void ReleaseConfig(nint bytes);
-        [DllImport(Dll,EntryPoint="UsbDk_ReadPipe")] internal static extern int Read(nint device,nint request,nint overlap);
-        [DllImport(Dll,EntryPoint="UsbDk_WritePipe")] internal static extern int Write(nint device,nint request,nint overlap);
+        [DllImport(Dll,EntryPoint="UsbDk_ReadPipe",SetLastError=true)] internal static extern int Read(nint device,nint request,nint overlap);
+        [DllImport(Dll,EntryPoint="UsbDk_WritePipe",SetLastError=true)] internal static extern int Write(nint device,nint request,nint overlap);
         [DllImport(Dll,EntryPoint="UsbDk_GetRedirectorSystemHandle")] internal static extern nint SystemHandle(nint device);
         [DllImport("kernel32.dll",EntryPoint="CancelIoEx",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] internal static extern bool Cancel(nint device,nint overlap);
         [DllImport("kernel32.dll",EntryPoint="GetOverlappedResult",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] internal static extern bool Result(nint device,nint overlap,out uint bytes,[MarshalAs(UnmanagedType.Bool)]bool wait);

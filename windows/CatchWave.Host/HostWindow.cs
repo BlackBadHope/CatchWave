@@ -205,7 +205,7 @@ internal sealed class HostWindow:Form {
     }
     internal void UsbMessage(string code){
         if(IsDisposed||!IsHandleCreated)return;if(InvokeRequired){BeginInvoke(()=>UsbMessage(code));return;}
-        usbNotice=code switch{"USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
+        usbNotice=code switch{"USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.","USB_NATIVE_INVALID_PARAMETER"=>"USB-компонент Windows отклонил запрос. Подключитесь по Wi-Fi; код ошибки есть в диагностике.","USB_DEVICE_NOT_READY"=>"Windows не смогла открыть телефон по USB. Переподключите кабель; Wi-Fi остаётся доступен.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
         model.Log.Event("USB",code.StartsWith("USB_",StringComparison.Ordinal)?code:"SESSION_ENDED");
     }
     internal void ConfigureUsb(Func<UsbAccessory.Phone,Task> connect,Func<bool> running){

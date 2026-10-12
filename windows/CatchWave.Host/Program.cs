@@ -112,6 +112,11 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
 internal static class Program {
     [STAThread]
     internal static int Main(string[] args){
+        if(args.Length==2&&args[0]=="--usb-probe"){
+            try{var selected=UsbAccessory.Phones().Single(p=>p.Info.Id.Instance.Equals(args[1],StringComparison.OrdinalIgnoreCase));using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                using var pipe=Task.Run(()=>UsbAccessory.Open(selected,deadline.Token,(code,values)=>Console.WriteLine(code+" "+string.Join(' ',values)))).GetAwaiter().GetResult();Console.WriteLine("USB_ACCESSORY_READY");Task.Delay(2000,deadline.Token).GetAwaiter().GetResult();return 0;
+            }catch(Exception e)when(e is IOException or OperationCanceledException or InvalidOperationException){Console.Error.WriteLine(e is IOException?e.Message:"USB_PROBE_FAILED");return 2;}
+        }
         if(args.SequenceEqual(new[]{"--usb-list"})){
             try{foreach(var phone in UsbAccessory.Phones())Console.WriteLine($"{phone.Info.Id.Instance} {phone.Info.Descriptor.Vendor:X4}:{phone.Info.Descriptor.Product:X4} port={phone.Info.Port} accessory={phone.Accessory}");return UsbAccessory.Available?0:2;}
             catch(IOException e){Console.Error.WriteLine(e.Message);return 2;}
