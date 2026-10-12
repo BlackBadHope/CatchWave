@@ -3,12 +3,8 @@ package app.catchwave;
 
 /** Button-only mode, with no pose prerequisite or timer. Sensor/permission faults still fail closed. */
 final class GestureArming {
-    private static final long TABLE_DWELL = 150;
-    private static final double FLAT = Math.cos(Math.toRadians(15)),
-            EXIT_FLAT = Math.cos(Math.toRadians(22));
-    private boolean allowed, active, flatPosture;
-    private long last = -1, flatSince = -1, revision;
-    private double gravityZ;
+    private boolean allowed, active;
+    private long last = -1, revision;
     private String reason = "OFF";
 
     synchronized void permit(boolean value, long now) {
@@ -31,8 +27,8 @@ final class GestureArming {
     }
 
     private void clear(String why) {
-        active = flatPosture = false;
-        last = flatSince = -1;
+        active = false;
+        last = -1;
         reason = allowed ? why : "OFF";
         revision++;
     }
@@ -66,14 +62,13 @@ final class GestureArming {
         tick(now);
         if (!activationReady() || active) return false;
         active = true;
-        flatPosture = Math.abs(gravityZ) >= FLAT;
-        flatSince = -1;
         reason = "ARMED";
         revision++;
         return true;
     }
 
-    // Motion may refresh the neutral, but never turns this mode on or off.
+    // Crossing a flat-pose threshold can be the intended 30-degree volume gesture.
+    // Keep the mode revision stable; the engine handles genuine off-axis posture changes.
     synchronized void sample(
             long now, double w, double x, double y, double z, double gyro, double accelNorm) {
         tick(now);
@@ -88,27 +83,7 @@ final class GestureArming {
             clear("INVALID_SENSOR");
             return;
         }
-        x /= norm;
-        y /= norm;
         last = now;
-        gravityZ = 1 - 2 * (x * x + y * y);
-        if (!active) return;
-        double flat = Math.abs(gravityZ);
-        boolean quiet = gyro <= .18 && Math.abs(accelNorm - 9.81) <= 1.2;
-        if (flatPosture && flat < EXIT_FLAT) {
-            flatPosture = false;
-            reason = "PICKUP_NEUTRAL";
-            revision++;
-        }
-        if (!flatPosture && flat >= FLAT && quiet) {
-            if (flatSince < 0) flatSince = now;
-            if (now - flatSince >= TABLE_DWELL) {
-                flatPosture = true;
-                flatSince = -1;
-                reason = "TABLE_NEUTRAL";
-                revision++;
-            }
-        } else flatSince = -1;
     }
 
     synchronized String label(long now) {
@@ -122,8 +97,8 @@ final class GestureArming {
     synchronized String explanation() {
         return switch (reason) {
             case "ARMED" -> "Режим включён кнопкой; положение телефона его не выключает";
-            case "PICKUP_NEUTRAL", "TABLE_NEUTRAL", "DISPLAY_NEUTRAL" ->
-                    "Активация сохранена: держите спокойно для новой нейтрали";
+            case "DISPLAY_NEUTRAL" ->
+                    "Активация сохранена; направление наклонов соответствует экрану";
             case "MANUAL_NEUTRAL" ->
                     "Активация сброшена кнопкой; нажмите «Активировать управление»";
             case "MANUAL_OFF" -> "Режим выключен кнопкой; звук с ПК продолжается";

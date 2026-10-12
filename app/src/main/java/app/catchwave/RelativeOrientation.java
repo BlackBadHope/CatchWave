@@ -17,7 +17,8 @@ final class RelativeOrientation {
 
     void display(int rotation) {
         display = rotation;
-        reset();
+        if (neutral) rebase();
+        else reset();
     }
 
     void clearNeutral() {
@@ -41,30 +42,42 @@ final class RelativeOrientation {
         z = d / norm;
         last = t;
         if (calibrating) {
-            nw = w;
-            nx = x;
-            ny = y;
-            nz = z;
-            neutral = true;
-            // Gravity in the neutral device frame: conjugate(q) * world-Z * q.
-            double gx = 2 * (nx * nz - nw * ny),
-                    gy = 2 * (ny * nz + nw * nx),
-                    gz = 1 - 2 * (nx * nx + ny * ny);
-            double rightX = display == 0 ? 1 : display == 2 ? -1 : 0,
-                    rightY = display == 1 ? 1 : display == 3 ? -1 : 0;
-            // Fix during calibration: upright gets screen-Z, flat gets screen-Y.
-            ax = -gz * rightY;
-            ay = gz * rightX;
-            az = gx * rightY - gy * rightX;
-            double length = Math.sqrt(ax * ax + ay * ay + az * az);
-            axisReady = length >= .3;
-            if (axisReady) {
-                ax /= length;
-                ay /= length;
-                az /= length;
-            }
+            rebase();
         }
         return true;
+    }
+
+    void rebase() {
+        nw = w;
+        nx = x;
+        ny = y;
+        nz = z;
+        neutral = true;
+        updateAxis();
+    }
+
+    private void updateAxis() {
+        // Gravity in the neutral device frame: conjugate(q) * world-Z * q.
+        double gx = 2 * (nx * nz - nw * ny),
+                gy = 2 * (ny * nz + nw * nx),
+                gz = 1 - 2 * (nx * nx + ny * ny);
+        double rightX = display == 0 ? 1 : display == 2 ? -1 : 0,
+                rightY = display == 1 ? 1 : display == 3 ? -1 : 0;
+        // Fix during calibration: upright gets screen-Z, flat gets screen-Y.
+        ax = -gz * rightY;
+        ay = gz * rightX;
+        az = gx * rightY - gy * rightX;
+        double length = Math.sqrt(ax * ax + ay * ay + az * az);
+        axisReady = length >= .3;
+        if (axisReady) {
+            ax /= length;
+            ay /= length;
+            az /= length;
+        }
+    }
+
+    boolean flat() {
+        return Math.abs(1 - 2 * (x * x + y * y)) >= Math.cos(Math.toRadians(15));
     }
 
     boolean fresh(long now) {

@@ -50,6 +50,9 @@ internal sealed class HostWindow : Form
         commands = new(),
         content = new();
     private readonly Button network = Button("");
+
+    // Windows still uses a dropdown after Closed fires. Keep it alive until the form is disposed.
+    private readonly ContextMenuStrip networkMenu = new();
     private readonly Label privacy = Label(9);
     private readonly Button pairAction = Button(""),
         diagnosticAction = Button("Диагностика");
@@ -186,9 +189,9 @@ internal sealed class HostWindow : Form
             ColumnCount = 1,
             RowCount = 7,
             Margin = Padding.Empty,
-            AutoScroll = true,
             BackColor = HostCard.Fill,
         };
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
@@ -196,11 +199,14 @@ internal sealed class HostWindow : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        connection.AutoSize = false;
         connection.Dock = DockStyle.Fill;
         left.Controls.Add(connection, 0, 0);
         var source = Label(11);
         source.Text = synthetic ? "Тестовый источник: тишина" : "Подключение к телефону";
         var sourcePanel = new Panel { Dock = DockStyle.Fill };
+        source.AutoSize = false;
+        source.Height = 24;
         source.Dock = DockStyle.Top;
         network.Dock = DockStyle.Bottom;
         network.Text = new HostEndpoint(address, "Current").ToString();
@@ -208,6 +214,7 @@ internal sealed class HostWindow : Form
         sourcePanel.Controls.Add(source);
         sourcePanel.Controls.Add(network);
         left.Controls.Add(sourcePanel, 0, 1);
+        controlStatus.AutoSize = false;
         controlStatus.Dock = DockStyle.Fill;
         left.Controls.Add(controlStatus, 0, 2);
         guide.Dock = DockStyle.Fill;
@@ -226,6 +233,7 @@ internal sealed class HostWindow : Form
         left.Controls.Add(guide, 0, 3);
         control.Dock = DockStyle.Fill;
         left.Controls.Add(control, 0, 4);
+        controlHint.AutoSize = false;
         controlHint.Dock = DockStyle.Fill;
         left.Controls.Add(controlHint, 0, 5);
         var warning = new FlowLayoutPanel
@@ -235,8 +243,13 @@ internal sealed class HostWindow : Form
             WrapContents = false,
             AutoScroll = true,
         };
-        saving.MaximumSize = new Size(480, 0);
-        reason.MaximumSize = new Size(480, 0);
+        warning.SizeChanged += (_, _) =>
+        {
+            saving.MaximumSize = reason.MaximumSize = new Size(
+                Math.Max(1, warning.ClientSize.Width - 24),
+                0
+            );
+        };
         warning.Controls.Add(saving);
         warning.Controls.Add(reason);
         left.Controls.Add(warning, 0, 6);
@@ -646,15 +659,43 @@ internal sealed class HostWindow : Form
     )
     {
         network.Text = current.ToString();
+        networkMenu.BackColor = Surface;
+        networkMenu.ForeColor = TextColor;
+        networkMenu.Font = Font;
         network.Click += (_, _) =>
         {
-            var menu = new ContextMenuStrip
+            if (!network.Enabled)
+                return;
+            network.Enabled = false;
+            IReadOnlyList<HostEndpoint> choices;
+            try
             {
-                BackColor = Surface,
-                ForeColor = TextColor,
-                Font = Font,
-            };
-            foreach (var next in available())
+                choices = available();
+            }
+            catch (System.Net.NetworkInformation.NetworkInformationException)
+            {
+                if (!IsDisposed)
+                    MessageBox.Show(
+                        this,
+                        "Не удалось прочитать подключения. Повторите попытку.",
+                        "CatchWave"
+                    );
+                return;
+            }
+            finally
+            {
+                if (!IsDisposed)
+                    network.Enabled = true;
+            }
+            if (IsDisposed)
+                return;
+            var menu = networkMenu;
+            foreach (ToolStripItem item in menu.Items.Cast<ToolStripItem>().ToArray())
+            {
+                menu.Items.Remove(item);
+                item.Dispose();
+            }
+            foreach (var next in choices)
             {
                 var item = new ToolStripMenuItem(next.ToString())
                 {
@@ -724,7 +765,6 @@ internal sealed class HostWindow : Form
                         Enabled = false,
                     }
                 );
-            menu.Closed += (_, _) => menu.Dispose();
             menu.Show(network, new Point(0, network.Height));
         };
     }
@@ -756,6 +796,21 @@ internal sealed class HostWindow : Form
             || diagnosticAction.Bottom > diagnosticAction.Parent!.ClientSize.Height
         )
             throw new Exception("Right column overflow");
+        foreach (
+            Control item in new Control[]
+            {
+                connection,
+                controlStatus,
+                controlHint,
+                control,
+                network,
+            }
+        )
+            if (
+                item.Right > item.Parent!.ClientSize.Width
+                || item.Bottom > item.Parent.ClientSize.Height
+            )
+                throw new Exception("Main control clipped: " + item.GetType().Name);
     }
 
     internal Bitmap RenderClient()
@@ -774,6 +829,7 @@ internal sealed class HostWindow : Form
         if (disposing)
         {
             timer.Dispose();
+            networkMenu.Dispose();
             cancellation.Dispose();
             model.Changed -= RefreshState;
             picture.Image = null;

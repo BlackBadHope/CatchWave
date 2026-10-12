@@ -163,15 +163,14 @@ public class SensorIntegrationTest {
     }
 
     @Test
-    public void displayRotationAndOrientationFirstKeepActivationAndRequireNewNeutral()
-            throws Exception {
+    public void displayRotationKeepsNeutralButDropsOldQueuedCommands() throws Exception {
         arm();
         long revision = gate.revision();
         Shadows.shadowOf(service.getSystemService(WindowManager.class).getDefaultDisplay())
                 .setRotation(1);
         frame(Sensor.TYPE_GAME_ROTATION_VECTOR, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_ACCELEROMETER);
         assertTrue(gate.reason(), gate.active(SystemClock.elapsedRealtime()));
-        assertFalse(engine.neutralReady(SystemClock.elapsedRealtime()));
+        assertTrue(engine.neutralReady(SystemClock.elapsedRealtime()));
         assertFalse(receiver.commandArmed(revision));
         quiet(1700);
         assertTrue(gate.active(SystemClock.elapsedRealtime()));
@@ -238,7 +237,8 @@ public class SensorIntegrationTest {
         pose = new double[] {0, 1, 0, 0};
         quiet(200);
         assertTrue(gate.active(SystemClock.elapsedRealtime()));
-        assertFalse((Boolean) get(service, "commandReady"));
+        assertTrue((Boolean) get(service, "commandReady"));
+        assertFalse(engine.tiltAvailable(SystemClock.elapsedRealtime()));
         quiet(1700);
         assertTrue(gate.active(SystemClock.elapsedRealtime()));
         assertTrue((Boolean) get(service, "commandReady"));
@@ -252,13 +252,14 @@ public class SensorIntegrationTest {
     }
 
     @Test
-    public void uprightPickupKeepsActivationButNeedsQuietNeutral() throws Exception {
+    public void uprightPickupKeepsCommandsWhileOnlyTiltRebases() throws Exception {
         arm();
         pose = new double[] {C, C, 0, 0};
         frame();
         assertTrue(gate.active(SystemClock.elapsedRealtime()));
-        assertFalse((Boolean) get(service, "commandReady"));
-        assertEquals("PICKUP_NEUTRAL", gate.reason());
+        assertTrue((Boolean) get(service, "commandReady"));
+        assertEquals("ARMED", gate.reason());
+        assertTrue((Boolean) get(engine, "postureRebasing"));
         quiet(1700);
         assertTrue(gate.active(SystemClock.elapsedRealtime()));
         assertTrue((Boolean) get(service, "commandReady"));

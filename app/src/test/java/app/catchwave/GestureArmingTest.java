@@ -117,29 +117,28 @@ public class GestureArmingTest {
     }
 
     @Test
-    public void pickupResetsNeutralRevisionWithoutClosingActivation() {
+    public void pickupDoesNotRestartTheEngineViaModeRevision() {
         arm();
         long revision = gate.revision();
         double a = Math.toRadians(50) / 2;
         gate.sample(now, Math.sin(a), Math.cos(a), 0, 0, .4, 9.81);
         now += 50;
         assertTrue(gate.active(now));
-        assertTrue(gate.revision() > revision);
-        assertEquals("PICKUP_NEUTRAL", gate.reason());
+        assertEquals(revision, gate.revision());
+        assertEquals("ARMED", gate.reason());
     }
 
     @Test
-    public void repeatedPickupNeedsAnotherFreshNeutralInSameActivation() {
+    public void repeatedPickupKeepsModeRevisionStable() {
         arm();
+        long revision = gate.revision();
         double a = Math.toRadians(50) / 2;
         gate.sample(now, Math.sin(a), Math.cos(a), 0, 0, .4, 9.81);
         now += 50;
         hold(90, false, 5);
-        long revision = gate.revision();
         gate.sample(now, Math.sin(a), Math.cos(a), 0, 0, .4, 9.81);
         now += 50;
-        assertTrue(gate.revision() > revision);
-        assertEquals("PICKUP_NEUTRAL", gate.reason());
+        assertEquals(revision, gate.revision());
         assertTrue(gate.active(now));
     }
 

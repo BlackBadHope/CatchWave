@@ -141,6 +141,30 @@ internal static class HostUiTest
                     form.AssertLayout();
                     checks++;
                 }
+                form.ConfigureNetworks(
+                    new HostEndpoint("127.0.0.1", "Test"),
+                    _ => Task.CompletedTask,
+                    _ => PairingQr.Fixture,
+                    () => new[] { new HostEndpoint("127.0.0.1", "Test") },
+                    49372
+                );
+                var network = (Button)
+                    typeof(HostWindow)
+                        .GetField("network", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .GetValue(form)!;
+                var menu = (ContextMenuStrip)
+                    typeof(HostWindow)
+                        .GetField("networkMenu", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .GetValue(form)!;
+                for (int i = 0; i < 4; i++)
+                {
+                    network.PerformClick();
+                    Application.DoEvents();
+                    Check(menu.IsHandleCreated && !menu.IsDisposed && menu.Items.Count == 1);
+                    menu.Close(ToolStripDropDownCloseReason.AppClicked);
+                    Application.DoEvents();
+                    Check(!menu.IsDisposed && form.Visible);
+                }
                 form.Close();
             }
             catch (Exception e)

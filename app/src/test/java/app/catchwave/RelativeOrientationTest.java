@@ -51,6 +51,25 @@ public class RelativeOrientationTest {
     }
 
     @Test
+    public void livePortraitToLandscapeRemapsAxisWithoutLosingCommands() {
+        double[] portrait = PhysicalGestureTest.neutral(0, Math.PI / 2);
+        RelativeOrientation o = new RelativeOrientation();
+        PhysicalGestureTest.orientation(o, 10, portrait, true);
+        double[] landscape =
+                PhysicalGestureTest.turn(
+                        portrait, PhysicalGestureTest.axis(portrait, 0), Math.PI / 2);
+        PhysicalGestureTest.orientation(o, 20, landscape, false);
+        o.display(1);
+        assertTrue(o.fresh(20));
+        assertTrue(o.tiltAvailable());
+        assertEquals(0, o.tilt(), 1e-9);
+        double[] rightTilt =
+                PhysicalGestureTest.turn(landscape, PhysicalGestureTest.axis(landscape, 1), .55);
+        PhysicalGestureTest.orientation(o, 30, rightTilt, false);
+        assertEquals(.55, o.tilt(), 1e-9);
+    }
+
+    @Test
     public void staleBackwardsInvalidAndMissingSamplesInvalidateNeutral() {
         RelativeOrientation o = new RelativeOrientation();
         o.sample(10, 1, 0, 0, 0, true);

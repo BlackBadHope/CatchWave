@@ -34,6 +34,8 @@ public final class GestureEngine {
     private int displayRotation;
     private final TiltRepeater tilt = new TiltRepeater();
     private boolean enabled, initialized, pulse, tapArmed = true, tiltControl = true;
+    private boolean postureRebasing;
+    private long postureQuietSince = -1, postureRebases;
     private long warmUntil, lastSample, lastTap = -10000, pulseStart, trainEnd, coolUntil;
     private int taps, shakeSign, shakePeaks, lastSeries;
     private long shakeStarted, lastShakePeak;
@@ -69,6 +71,8 @@ public final class GestureEngine {
         resetCause = cause;
         resets++;
         orientation.reset();
+        postureRebasing = false;
+        postureQuietSince = -1;
         tilt.reset(now);
         initialized = false;
         pulse = false;
@@ -100,7 +104,7 @@ public final class GestureEngine {
     }
 
     public boolean tiltAvailable(long now) {
-        return neutralReady(now) && orientation.tiltAvailable();
+        return neutralReady(now) && !postureRebasing && orientation.tiltAvailable();
     }
 
     public void gyro(double x, double y, double z) {
@@ -112,8 +116,18 @@ public final class GestureEngine {
         if (rotation != displayRotation) {
             displayRotation = rotation;
             orientation.display(rotation);
-            reset(now, "DISPLAY_CHANGE");
+            clearPendingGestures(now);
         }
+    }
+
+    void clearPendingGestures(long now) {
+        tilt.stop();
+        taps = 0;
+        pulse = false;
+        tapArmed = true;
+        shakePeaks = 0;
+        shakeSign = 0;
+        coolUntil = Math.max(warmUntil, now + 250);
     }
 
     public void orientation(long now, double w, double x, double y, double z) {
@@ -131,9 +145,32 @@ public final class GestureEngine {
             orientation.clearNeutral();
             calibrating = false;
         }
-        if (!orientation.sample(now, w, x, y, z, calibrating))
+        if (!orientation.sample(now, w, x, y, z, calibrating)) {
             reset(now, "ORIENTATION_INVALID_OR_GAP");
-        else if (!calibrating && orientation.postureChanged()) reset(now, "POSTURE_CHANGE");
+            return;
+        }
+        if (!calibrating && orientation.hasNeutral()) {
+            if (orientation.postureChanged()) postureRebasing = true;
+            else if (postureRebasing) {
+                postureRebasing = false;
+                postureQuietSince = -1;
+            }
+            if (postureRebasing) {
+                // A pickup changes the roll axis, not authority to tap or use other commands.
+                // Stop volume immediately; choose its new baseline after a short quiet pause.
+                tilt.stop();
+                if (angularSpeed > .15) postureQuietSince = -1;
+                else {
+                    if (postureQuietSince < 0) postureQuietSince = now;
+                    if (now - postureQuietSince >= 300) {
+                        orientation.rebase();
+                        postureRebases++;
+                        postureRebasing = false;
+                        postureQuietSince = -1;
+                    }
+                }
+            }
+        }
     }
 
     public void acceleration(long now, double x, double y, double z) {
@@ -218,6 +255,7 @@ public final class GestureEngine {
         boolean ready =
                 tiltControl
                         && tiltAvailable(now)
+                        && !orientation.flat()
                         && energy < 2
                         && angularSpeed < .65
                         && taps == 0
@@ -268,11 +306,7 @@ public final class GestureEngine {
 
     public String summary(long now) {
         return "Нейтраль: "
-                + (neutralReady(now)
-                        ? "готова"
-                        : "POSTURE_CHANGE".equals(resetCause)
-                                ? "положение изменилось — держите спокойно 1,5 с"
-                                : "держите спокойно 1,5 с")
+                + (neutralReady(now) ? "готова" : "держите спокойно 1,5 с")
                 + (neutralReady(now) && !tiltAvailable(now)
                         ? "; для наклонов держите верх телефона вверх"
                         : "")
@@ -301,6 +335,13 @@ public final class GestureEngine {
                         + tilt.active()
                         + " tiltRepeatMs="
                         + TiltRepeater.REPEAT_MS);
+        out.println(
+                "postureRebasing="
+                        + postureRebasing
+                        + " postureRebases="
+                        + postureRebases
+                        + " flatTiltBlocked="
+                        + orientation.flat());
         out.println(
                 "neutralReady="
                         + neutralReady(now)

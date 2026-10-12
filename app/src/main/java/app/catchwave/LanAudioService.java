@@ -537,7 +537,8 @@ public final class LanAudioService extends Service implements SensorEventListene
         feedback.update(arming.active(now), settings.activationSound());
         if (armRevision == arming.revision()) return;
         armRevision = arming.revision();
-        engine.reset(now, "ARMING_" + arming.reason());
+        if ("DISPLAY_NEUTRAL".equals(arming.reason())) engine.clearPendingGestures(now);
+        else engine.reset(now, "ARMING_" + arming.reason());
         if (receiver != null) receiver.revokePending();
         DiagnosticStore.LOG.event(
                 DiagnosticLog.Event.ARMING, arming.reason(), arming.active(now) ? 1 : 0);
