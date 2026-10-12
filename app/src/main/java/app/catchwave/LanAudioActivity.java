@@ -58,7 +58,7 @@ public final class LanAudioActivity extends Activity {
     private boolean effectiveControl(){return LanConnection.effectiveControl(state.connected,settings.hostControl(),state.hostAllowed);}
     private void render(){
         if(isFinishing()||status==null)return;
-        status.setText(switch(state.stage){case STREAMING -> "Подключено";case SILENCE -> "Тишина с ПК";case BUFFERING -> "Ждём звук";case ERROR -> "Ошибка связи";case DISCONNECTED,SCANNED -> "Не подключено";default -> "Подключение…";});
+        status.setText(switch(state.stage){case STREAMING -> "Подключено";case SILENCE -> "Тишина с ПК";case BUFFERING -> "Ждём звук";case PHONE_AUDIO -> "Звук телефона";case ERROR -> "Ошибка связи";case DISCONNECTED,SCANNED -> "Не подключено";default -> "Подключение…";});
         status.setTextColor(state.connected?LanAudioView.ACCENT:state.error!=LanConnection.Error.NONE?0xfff4ae98:LanAudioView.MUTED);
         detail.setText((state.started?"Подключение: "+state.transport+"\n":"")+state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
         ui.usb.setText(state.started&&"USB".equals(state.transport)?"Подключено по USB":"Подключить по USB");
@@ -81,6 +81,7 @@ public final class LanAudioActivity extends Activity {
         if(scanAfterStop&&!state.started){scanAfterStop=false;startActivityForResult(new Intent(this,PairingScanActivity.class),42);}
     }
     private String guideText(){
+        if(state.stage==LanConnection.Stage.PHONE_AUDIO)return "Телефон имеет приоритет. Звук с ПК вернётся автоматически после окончания воспроизведения на телефоне. «Отключиться» отменяет возврат.";
         if(state.stage==LanConnection.Stage.BUFFERING)return "Ожидается свежий звук. Команды приостановлены; короткая пауза не требует повторного подключения.";
         if(!state.connected)return "Активация недоступна: сначала подключитесь к Host.";
         if(!state.hostAllowed)return "Активация недоступна: нажмите «Включить управление хостом» в Host на ПК и подтвердите диалог.";

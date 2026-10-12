@@ -59,4 +59,18 @@ public class LanBackgroundPlaybackTest {
         ShadowSystemClock.advanceBy(Duration.ofMillis(5000));health();assertTrue(Shadows.shadowOf(service).isStoppedBySelf());assertFalse(settings.resume());assertEquals(LanConnection.Error.AUDIO_STALLED,LanState.INSTANCE.error);
         life.destroy();ended=true;assertFalse(lock.isHeld());assertFalse(wifi.isHeld());
     }
+    @Test public void phoneAudioCanPauseLongerThanFiveSecondsWithoutDisconnectingFreshPcStream()throws Exception{
+        receiver.focus(android.media.AudioManager.AUDIOFOCUS_LOSS);
+        for(int i=0;i<24;i++){ShadowSystemClock.advanceBy(Duration.ofMillis(500));stream.received(SystemClock.elapsedRealtime());health();}
+        assertFalse(Shadows.shadowOf(service).isStoppedBySelf());assertTrue(settings.resume());assertTrue(receiver.playbackAlive());
+        assertTrue(receiver.focusPaused());assertEquals(LanConnection.Error.NONE,LanState.INSTANCE.error);
+        receiver.focus(android.media.AudioManager.AUDIOFOCUS_GAIN);health();
+        assertFalse(receiver.focusPaused());assertTrue(settings.resume());assertFalse(Shadows.shadowOf(service).isStoppedBySelf());
+    }
+    @Test public void ownerDisconnectWhilePhoneAudioPlaysDoesNotResumeOnLateGain()throws Exception{
+        receiver.focus(android.media.AudioManager.AUDIOFOCUS_LOSS);health();
+        service.onStartCommand(new android.content.Intent().setAction(LanAudioService.STOP),0,3);
+        life.destroy();ended=true;receiver.focus(android.media.AudioManager.AUDIOFOCUS_GAIN);
+        assertFalse(settings.resume());assertFalse(receiver.playbackAlive());assertFalse(LanState.INSTANCE.started);
+    }
 }

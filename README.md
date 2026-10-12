@@ -34,6 +34,8 @@ Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor sa
 
 Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
 
+Phone audio has priority over an already connected CatchWave stream. Other media, notifications or calls pause PC output while keeping the connection; old PCM is discarded. Transient interruptions resume on Android's focus-gain callback. After permanent focus loss, CatchWave waits until it has observed phone audio and at least 750 ms of quiet, then requests focus again. It does not take focus from a player still loading its first audio. Manual **«Отключиться»** cancels the return. A real network failure still ends the session. OEM audio-focus and playback reporting behavior needs device testing.
+
 The phone and Host offer local diagnostic view/export: at most 256 events, timestamps/timezones, nonsecret session correlation, source/output/focus/route, frame counters and command/volume results. No audio, raw sensor vectors, QR, credentials, device names or track titles are recorded. See [diagnostics](docs/DIAGNOSTICS.md).
 
 See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-ARMING-FEEDBACK.md).

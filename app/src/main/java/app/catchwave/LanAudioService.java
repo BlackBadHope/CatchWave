@@ -17,7 +17,7 @@ public final class LanAudioService extends Service implements SensorEventListene
     private final ActivationTone tones=new ActivationTone();private ActivationFeedback feedback=new ActivationFeedback(tones::play);
     private String readiness="NONE";
     private SensorManager sensors;private AudioManager manager;private LanSettings settings;
-    private LanReceiver receiver;private PowerManager.WakeLock lock;private AudioFocusRequest focus;
+    private LanReceiver receiver;private PowerManager.WakeLock lock;private LanAudioFocus focus;
     private final TransportEpoch transport=new TransportEpoch();private UsbAudioProxy usb;private boolean wifiFallback;
     private String route="Wi-Fi";private boolean detachRegistered;
     private final BroadcastReceiver detach=new BroadcastReceiver(){public void onReceive(Context context,Intent intent){
@@ -87,13 +87,13 @@ public final class LanAudioService extends Service implements SensorEventListene
                     java.util.concurrent.CompletableFuture<Boolean> result=LanFocus.request(main,
                         ()->current(generation)&&receiver!=null&&!SessionModel.INSTANCE.running&&!SessionModel.INSTANCE.measuringAudio,
                         ()->current(generation)&&receiver!=null&&receiver.fresh(),()->{
-                        focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
-                            .setOnAudioFocusChangeListener(change->{if(!current(generation))return;if(receiver!=null)receiver.focus(change);if(change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT){state.fail(settings,LanConnection.Error.AUDIO_FOCUS_LOST,state.stage);stopSelf();}else if(receiver!=null)receiver.volume(change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK?.2f:1f);},main).build();
-                        return manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+                        focus=new LanAudioFocus(main,manager,()->current(generation)&&receiver!=null,
+                            ()->receiver!=null&&receiver.fresh(),change->{if(current(generation)&&receiver!=null){receiver.focus(change);syncArming(SystemClock.elapsedRealtime());state.changed();}});
+                        return focus.start();
                     });
                     try{return result.get(1500,java.util.concurrent.TimeUnit.MILLISECONDS);}catch(Exception failure){return false;}
                 }
-                public void stage(LanConnection.Stage value){main.post(()->{if(current(generation)&&state.error==LanConnection.Error.NONE){state.transition(value);getSystemService(NotificationManager.class).notify(NOTICE,notification());}});}
+                public void stage(LanConnection.Stage value){main.post(()->{if(current(generation)&&state.error==LanConnection.Error.NONE){state.transition(receiver!=null&&receiver.focusPaused()?LanConnection.Stage.PHONE_AUDIO:value);getSystemService(NotificationManager.class).notify(NOTICE,notification());}});}
                 public void failed(LanConnection.Error code,LanConnection.Stage at){main.post(()->{if(current(generation)){if(usb!=null&&wifiFallback&&(code==LanConnection.Error.NETWORK||code==LanConnection.Error.HOST_CLOSED||code==LanConnection.Error.HOST_TIMEOUT)){usbLost();return;}state.fail(settings,code,at);refreshSensors();}});}
                 public void policy(boolean allowed){main.post(()->{if(current(generation)){state.hostAllowed=allowed;if(!allowed&&receiver!=null)receiver.revokePending();syncArming(SystemClock.elapsedRealtime());state.changed();}});}
                 public byte[] report(){return new byte[]{1,0,(byte)state.sensorCode,(byte)(current(generation)&&settings.hostControl()?1:0),(byte)(current(generation)&&commandReady&&arming.commands(SystemClock.elapsedRealtime())&&effectiveControl()?1:0)};}
@@ -112,7 +112,7 @@ public final class LanAudioService extends Service implements SensorEventListene
     private void clearTransport(){
         transport.next();main.removeCallbacks(health);if(receiver!=null){receiver.close();receiver=null;}
         if(usb!=null){usb.close();usb=null;}wifiFallback=false;
-        if(focus!=null){manager.abandonAudioFocusRequest(focus);focus=null;}
+        if(focus!=null){focus.close();focus=null;}
     }
     private void beginUsb(Intent intent){
         if(!settings.resume()||SessionModel.INSTANCE.running||SessionModel.INSTANCE.measuringAudio){stopSelf();return;}

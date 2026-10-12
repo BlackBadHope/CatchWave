@@ -34,6 +34,7 @@ final class LanState {
             case SILENCE -> "PCM получен и принят AudioTrack. Кадры содержат нулевые отсчёты.";
             case STREAMING -> "PCM получен и принят AudioTrack. Слышимость зависит от громкости и аудиовыхода телефона.";
             case BUFFERING -> "Краткая пауза в потоке. Ожидание до 5 с; устаревший звук отбрасывается, команды приостановлены.";
+            case PHONE_AUDIO -> "Звук с ПК приостановлен для другого приложения. После завершения звука телефона CatchWave продолжит автоматически.";
             default -> "Этап: "+value;
         };
         Log.i("CatchWaveLAN","stage="+value.name());changed();
