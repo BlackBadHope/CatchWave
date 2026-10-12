@@ -11,19 +11,28 @@ import java.util.concurrent.Executors;
 
 /** Cancellation belongs to one capture generation, including its catalog lookup. */
 public final class RequestScope {
-    private static final ExecutorService closers=Executors.newCachedThreadPool(r -> {
-        Thread thread=new Thread(r,"CatchWave-request-close"); thread.setDaemon(true); return thread;
-    });
+    private static final ExecutorService closers =
+            Executors.newCachedThreadPool(
+                    r -> {
+                        Thread thread = new Thread(r, "CatchWave-request-close");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+
     public static final class CancelledException extends IOException {
-        public CancelledException() { super("Запрос отменён."); }
+        public CancelledException() {
+            super("Запрос отменён.");
+        }
     }
 
     private final Object lock = new Object();
     private final Set<HttpURLConnection> connections =
-        Collections.newSetFromMap(new IdentityHashMap<>());
+            Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile boolean cancelled;
 
-    public boolean isCancelled() { return cancelled; }
+    public boolean isCancelled() {
+        return cancelled;
+    }
 
     public void throwIfCancelled() throws CancelledException {
         if (cancelled || Thread.currentThread().isInterrupted()) throw new CancelledException();
@@ -42,7 +51,9 @@ public final class RequestScope {
     }
 
     public void unregister(HttpURLConnection connection) {
-        synchronized (lock) { connections.remove(connection); }
+        synchronized (lock) {
+            connections.remove(connection);
+        }
     }
 
     public void cancel() {
@@ -58,9 +69,15 @@ public final class RequestScope {
         for (HttpURLConnection connection : pending) disconnectAsync(connection);
     }
 
-    static void disconnectAsync(HttpURLConnection connection) { closers.execute(() -> disconnect(connection)); }
+    static void disconnectAsync(HttpURLConnection connection) {
+        closers.execute(() -> disconnect(connection));
+    }
 
     static void disconnect(HttpURLConnection connection) {
-        try { connection.disconnect(); } catch (RuntimeException ignored) { /* Continue closing other requests. */ }
+        try {
+            connection.disconnect();
+        } catch (RuntimeException ignored) {
+            /* Continue closing other requests. */
+        }
     }
 }
