@@ -113,7 +113,9 @@ internal static class Program {
         if(args.Length==3&&args[0]=="--interop-test")return InteropTest.Run(args[1],args[2]).GetAwaiter().GetResult();
         if(args.SequenceEqual(new[]{"--self-test"}))return SelfTest.Run().GetAwaiter().GetResult();
         if(args.Length==3&&args[0]=="--self-test"&&args[1]=="--qr-fixture")return SelfTest.Run(args[2]).GetAwaiter().GetResult();
-        if(args.Contains("--help")||args.Length==0){Console.WriteLine("CatchWave Host\n--listen IPv4|auto [--port 49372] [--synthetic] [--disable-media-keys | --enable-media-keys]\nauto: prefer USB tethering, otherwise an active private LAN address. The Host window can switch routes.\nDefault: loopback only. No wildcard bind, driver installation, autostart or firewall changes.\n--self-test: bounded loopback TLS, synthetic silence, fake key sink, no capture.");return 0;}
+        // Double-clicking the portable desktop app must open its pairing window.
+        if(args.Length==0)args=["--listen","auto"];
+        if(args.Contains("--help")){Console.WriteLine("CatchWave Host\n--listen IPv4|auto [--port 49372] [--synthetic] [--disable-media-keys | --enable-media-keys]\nauto: prefer USB tethering, otherwise an active private LAN address. The Host window can switch routes.\nWithout arguments: auto. No wildcard bind, driver installation, autostart or firewall changes.\n--self-test: bounded loopback TLS, synthetic silence, fake key sink, no capture.");return 0;}
         string address="127.0.0.1";int port=49372;bool synthetic=false,media=false,mediaLockedOff=false;
         try {for(int i=0;i<args.Length;i++)switch(args[i]){
             case "--listen":address=args[++i];break;case "--port":port=int.Parse(args[++i]);break;
