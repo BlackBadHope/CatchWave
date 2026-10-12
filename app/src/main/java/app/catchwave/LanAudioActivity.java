@@ -19,6 +19,7 @@ public final class LanAudioActivity extends Activity {
         connect=ui.connect;scan=ui.scan;control=ui.control;mode=ui.mode;
         mode.setOnClickListener(v->{if(state.started)startService(new Intent(this,LanAudioService.class).setAction(state.armed?LanAudioService.DEACTIVATE:LanAudioService.ACTIVATE));});
         ui.home.setOnClickListener(v->CatchWaveUi.home(this));
+        ui.usb.setOnClickListener(v->startActivity(new Intent(this,UsbConnectActivity.class)));
         scan.setOnClickListener(v->{
             if(!state.started)startActivityForResult(new Intent(this,PairingScanActivity.class),42);
             else CatchWaveUi.dialog(this).setTitle("Подключить другой ПК?")
@@ -59,7 +60,8 @@ public final class LanAudioActivity extends Activity {
         if(isFinishing()||status==null)return;
         status.setText(switch(state.stage){case STREAMING -> "Подключено";case SILENCE -> "Тишина с ПК";case BUFFERING -> "Ждём звук";case ERROR -> "Ошибка связи";case DISCONNECTED,SCANNED -> "Не подключено";default -> "Подключение…";});
         status.setTextColor(state.connected?LanAudioView.ACCENT:state.error!=LanConnection.Error.NONE?0xfff4ae98:LanAudioView.MUTED);
-        detail.setText(state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
+        detail.setText((state.started?"Подключение: "+state.transport+"\n":"")+state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
+        ui.usb.setText(state.started&&"USB".equals(state.transport)?"Подключено по USB":"Подключить по USB");
         connect.setText(state.started?"Отключиться":state.error==LanConnection.Error.NONE?"Подключиться":"Повторить подключение");
         scan.setEnabled(true);scan.setVisibility(android.view.View.VISIBLE);ui.connectionButtonStyle(state.started);
         boolean effective=effectiveControl();control.setText(settings.hostControl()?"Отозвать разрешение управления":"Разрешить управление");control.setEnabled(settings.hostControl()||state.connected&&state.hostAllowed);

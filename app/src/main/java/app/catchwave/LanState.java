@@ -10,6 +10,7 @@ final class LanState {
     volatile boolean started,connected,listening,hostAllowed,armed;
     volatile boolean controlReady,activationReady;
     volatile String controlReadiness="OFF";
+    volatile String transport="Wi-Fi";
     volatile LanConnection.Stage stage=LanConnection.Stage.DISCONNECTED,lastStage=LanConnection.Stage.DISCONNECTED;
     volatile LanConnection.Error error=LanConnection.Error.NONE;
     volatile String status=LanConnection.title(stage),detail="Сканируйте QR текущего CatchWave Host.",sensorDetail="Датчики выключены",action="",statistics="Поток не запущен";

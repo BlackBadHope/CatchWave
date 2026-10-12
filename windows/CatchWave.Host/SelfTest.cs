@@ -14,6 +14,7 @@ internal static class SelfTest {
     internal static async Task<int> Run(string? qrFixture=null){
         try {
             checks+=HostUiTest.Run();
+            checks+=await UsbTest.Run();
             checks+=await NetworkTest.Run();
             checks+=DiagnosticTest.Run();
             string preference=Path.Combine(Path.GetTempPath(),"catchwave-selftest-"+Guid.NewGuid().ToString("N")+".json");

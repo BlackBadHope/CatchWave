@@ -20,13 +20,15 @@ internal sealed class HostWindow:Form {
     internal HostPermission Permission=>Volatile.Read(ref permission);
     internal bool MediaEnabled=>Permission.Enabled;
     private readonly object policyGate=new();
-    private readonly HostStatus model;
+    private HostStatus model;
+    private string transport="Wi-Fi";
+    private string usbNotice="";
     private readonly Label connection=Label(28,true),reason=Label(11),statistics=Label(10),phone=Label(11),controlStatus=Label(17,true),controlHint=Label(11),saving=Label(10),badge=Label(11,true);
     private readonly Button control=Button(""),revoke=Button("Отозвать разрешение ПК");
     private readonly bool locked;private readonly Func<bool,bool> save;
     private readonly PictureBox picture=new(),guide=new();
     private readonly Panel pairing=new(),diagnostics=new(),commands=new(),content=new();
-    private readonly Button network=Button("");
+    private readonly Button network=Button(""),usb=Button("Подключить по USB");
     // Windows still uses a dropdown after Closed fires. Keep it alive until the form is disposed.
     private readonly ContextMenuStrip networkMenu=new();
     private readonly Label privacy=Label(9);
@@ -68,7 +70,7 @@ internal sealed class HostWindow:Form {
         var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=Padding.Empty,BackColor=HostCard.Fill};
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,70));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,110));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,158));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
@@ -77,9 +79,9 @@ internal sealed class HostWindow:Form {
         connection.AutoSize=false;connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
         var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Подключение к телефону";
         var sourcePanel=new Panel{Dock=DockStyle.Fill};source.AutoSize=false;source.Height=24;source.Dock=DockStyle.Top;
-        network.Dock=DockStyle.Bottom;network.Text=new HostEndpoint(address,"Current").ToString();
+        network.Dock=DockStyle.Top;network.Text=new HostEndpoint(address,"Current").ToString();
         network.AccessibleName="Подключение через USB-модем или локальную сеть";
-        sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(network);left.Controls.Add(sourcePanel,0,1);
+        usb.Dock=DockStyle.Bottom;sourcePanel.Controls.Add(network);sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(usb);left.Controls.Add(sourcePanel,0,1);
         controlStatus.AutoSize=false;controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
         guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;guide.BackColor=Color.Transparent;
         using(var asset=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.tilt.png")!){using var img=Image.FromStream(asset);guide.Image=new Bitmap(img);assets.Add(guide.Image);}
@@ -174,13 +176,14 @@ internal sealed class HostWindow:Form {
             HostStage.Disconnected=>"Телефон отключён",_=>"Связь прервалась"
         };
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
-        badge.Text=s.Live?"Соединение работает":s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
+        badge.Text=s.Live?"Подключено · "+transport:s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
         badge.ForeColor=s.Live?Accent:Muted;
         reason.Text=s.Error==HostError.None?"":s.Error switch {
             HostError.AuthRejected=>"Сканируйте QR текущего Host.",HostError.TlsHandshake=>"Не удалось установить защищённое соединение.",
             HostError.CaptureFailed=>"Аудиовыход Windows недоступен. Откройте диагностику.",
             HostError.PeerClosed=>"Можно подключить телефон снова.",HostError.Protocol=>"Проверьте совместимость версий Host и Android.",_=>"Проверьте состояние на телефоне и откройте диагностику."
         };
+        if(s.Error==HostError.None&&!string.IsNullOrEmpty(usbNotice))reason.Text=usbNotice;
         statistics.Text=$"Сеанс: {s.Seconds} с\nОтправлено кадров: {s.Frames}\nПропущено интервалов: {s.Skipped}\nКод: {s.Error} · этап: {s.FailedAt}\nПоследняя причина: {model.Log.LastReason}\nОшибок журнала: {model.Log.StorageFailures}";
         phone.Text=!fresh?"Вывод телефона не подтверждён":s.ClientOutput switch {0=>"Ожидаем вывод телефона",1=>"Телефон принимает тишину",_=>"Телефон принимает звук"};
         bool effective=s.Effective(MediaEnabled,Permission.Generation);
@@ -195,6 +198,42 @@ internal sealed class HostWindow:Form {
         RenderPanels();
     }
     internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
+    internal void UseStatus(HostStatus next,string route){
+        if(IsDisposed||!IsHandleCreated)return;
+        if(InvokeRequired){BeginInvoke(()=>UseStatus(next,route));return;}
+        model.Changed-=RefreshState;model=next;model.Changed+=RefreshState;transport=route;if(route=="USB")usbNotice="";Render();
+    }
+    internal void UsbMessage(string code){
+        if(IsDisposed||!IsHandleCreated)return;if(InvokeRequired){BeginInvoke(()=>UsbMessage(code));return;}
+        usbNotice=code switch{"USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
+        model.Log.Event("USB",code.StartsWith("USB_",StringComparison.Ordinal)?code:"SESSION_ENDED");
+    }
+    internal void ConfigureUsb(Func<UsbAccessory.Phone,Task> connect,Func<bool> running){
+        usb.Click+=async(_,_)=>{
+            if(running()){MessageBox.Show(this,"Телефон уже подключается или подключён по USB.","CatchWave");return;}
+            if(!UsbAccessory.Available){
+                if(MessageBox.Show(this,"Для обычного кабеля нужен подписанный USB-компонент на ПК. Установка может кратко перезапустить USB-устройства и потребовать перезапуска ПК. Отладка Android и USB-модем не нужны. Установить компонент?","CatchWave",MessageBoxButtons.YesNo,MessageBoxIcon.Information,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+                usb.Enabled=false;try{await UsbComponent.Install();UsbMessage("USB_DRIVER_RESTART_REQUIRED");}
+                catch(Exception e)when(e is IOException or System.ComponentModel.Win32Exception or System.Net.Http.HttpRequestException or TaskCanceledException){UsbMessage("USB_DRIVER_MISSING");}
+                finally{if(!IsDisposed)usb.Enabled=true;}return;
+            }
+            usb.Enabled=false;
+            try{
+                var choices=await Task.Run(UsbAccessory.Phones);
+                if(IsDisposed)return;
+                if(choices.Count==0){MessageBox.Show(this,"Подключите телефон кабелем с передачей данных.","CatchWave");return;}
+                UsbAccessory.Phone selected;
+                if(choices.Count==1)selected=choices[0];else{
+                    using var pick=new Form{Text="Выберите телефон CatchWave",ClientSize=new Size(420,150),StartPosition=FormStartPosition.CenterParent};
+                    var list=new ComboBox{Dock=DockStyle.Top,DropDownStyle=ComboBoxStyle.DropDownList};list.Items.AddRange(choices.Cast<object>().ToArray());list.SelectedIndex=0;
+                    var go=new Button{Text="Подключить",Dock=DockStyle.Bottom,DialogResult=DialogResult.OK};pick.Controls.Add(list);pick.Controls.Add(go);pick.AcceptButton=go;
+                    if(pick.ShowDialog(this)!=DialogResult.OK)return;selected=(UsbAccessory.Phone)list.SelectedItem!;
+                }
+                usbNotice="Разрешите USB-доступ CatchWave на телефоне.";Render();await connect(selected);
+            }catch(Exception e)when(e is IOException or System.Runtime.InteropServices.SEHException or DllNotFoundException){UsbMessage(e is IOException?e.Message:"USB_OPEN_FAILED");}
+            finally{if(!IsDisposed)usb.Enabled=true;}
+        };
+    }
     internal void ConfigureNetworks(HostEndpoint current,Func<HostEndpoint,Task> select,Func<string,string> pairCode,Func<IReadOnlyList<HostEndpoint>> available,int port){
         network.Text=current.ToString();
         networkMenu.BackColor=Surface;networkMenu.ForeColor=TextColor;networkMenu.Font=Font;

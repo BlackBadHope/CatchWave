@@ -30,9 +30,12 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
     internal int AcceptedCommands;
     private HostPermission CurrentPermission()=>permission?.Invoke()??new(mediaEnabled?.Invoke()??allowMediaKeys,0);
     internal async Task Run(TcpClient peer,CancellationToken outer) {
-        using var peerLease=peer;using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(outer);
+        using var peerLease=peer;peer.NoDelay=true;await Run(peer.GetStream(),outer);
+    }
+    internal async Task Run(Stream source,CancellationToken outer) {
+        using var sourceLease=source;using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(outer);
         status?.Begin();status?.Stage(HostStage.Tls);
-        using var tls=new SslStream(peer.GetStream(),false);peer.NoDelay=true;
+        using var tls=new SslStream(source,false);
         try {using(var deadline=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token)){
             deadline.CancelAfter(8000);
             await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=identity.Certificate,EnabledSslProtocols=SslProtocols.Tls12},deadline.Token);
@@ -98,10 +101,10 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
                 status?.Log.Event("CONTROL",accepted?"ACCEPTED":"REJECTED",action,sequence);
                 byte[] ack=new byte[9];BinaryPrimitives.WriteInt64BigEndian(ack,sequence);ack[8]=accepted?(byte)1:(byte)0;await Write(4,ack);
             }}catch(Exception e){if(!lifetime.IsCancellationRequested)status?.Failure(HostStatus.Classify(e,status.Snapshot.Stage));throw;}});
-            await Task.WhenAny(sender,control);lifetime.Cancel();peer.Close();
+            await Task.WhenAny(sender,control);lifetime.Cancel();source.Close();
             try{await Task.WhenAll(sender,control);}catch(IOException){}catch(OperationCanceledException){}catch(ObjectDisposedException){}
         }catch(Exception e){if(!outer.IsCancellationRequested)status?.Failure(HostStatus.Classify(e,status.Snapshot.Stage));throw;}finally{
-            lifetime.Cancel();peer.Close();await capture;writeLock.Dispose();
+            lifetime.Cancel();source.Close();await capture;writeLock.Dispose();
             status?.End();
         }
     }
@@ -109,6 +112,11 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
 internal static class Program {
     [STAThread]
     internal static int Main(string[] args){
+        if(args.SequenceEqual(new[]{"--usb-list"})){
+            try{foreach(var phone in UsbAccessory.Phones())Console.WriteLine($"{phone.Info.Id.Instance} {phone.Info.Descriptor.Vendor:X4}:{phone.Info.Descriptor.Product:X4} port={phone.Info.Port} accessory={phone.Accessory}");return UsbAccessory.Available?0:2;}
+            catch(IOException e){Console.Error.WriteLine(e.Message);return 2;}
+        }
+        if(args.SequenceEqual(new[]{"--usb-self-test"})){try{Console.WriteLine("PASS: "+UsbTest.Run().GetAwaiter().GetResult()+" USB contract checks; no device access");return 0;}catch(Exception e){Console.Error.WriteLine("FAIL: "+e.Message);return 1;}}
         if(args.Length==2&&args[0]=="--ui-preview")return HostPreview.Run(args[1]);
         if(args.Length==3&&args[0]=="--interop-test")return InteropTest.Run(args[1],args[2]).GetAwaiter().GetResult();
         if(args.SequenceEqual(new[]{"--self-test"}))return SelfTest.Run().GetAwaiter().GetResult();
@@ -116,12 +124,13 @@ internal static class Program {
         // Double-clicking the portable desktop app must open its pairing window.
         if(args.Length==0)args=["--listen","auto"];
         if(args.Contains("--help")){Console.WriteLine("CatchWave Host\n--listen IPv4|auto [--port 49372] [--synthetic] [--disable-media-keys | --enable-media-keys]\nauto: prefer USB tethering, otherwise an active private LAN address. The Host window can switch routes.\nWithout arguments: auto. No wildcard bind, driver installation, autostart or firewall changes.\n--self-test: bounded loopback TLS, synthetic silence, fake key sink, no capture.");return 0;}
-        string address="127.0.0.1";int port=49372;bool synthetic=false,media=false,mediaLockedOff=false;
+        string address="127.0.0.1";int port=49372;bool synthetic=false,media=false,mediaLockedOff=false;string? usbPhone=null;
         try {for(int i=0;i<args.Length;i++)switch(args[i]){
             case "--listen":address=args[++i];break;case "--port":port=int.Parse(args[++i]);break;
+            case "--usb-phone":usbPhone=args[++i];break;
             case "--synthetic":synthetic=true;break;case "--enable-media-keys":media=true;break;case "--disable-media-keys":mediaLockedOff=true;break;default:throw new ArgumentException();
         }
-        var endpoints=HostNetwork.Available();var chosen=HostNetwork.Choose(address,endpoints);address=chosen.Address;
+        var endpoints=HostNetwork.Available();var chosen=address=="auto"&&endpoints.Count==0?new HostEndpoint("127.0.0.1","USB only"):HostNetwork.Choose(address,endpoints);address=chosen.Address;
         if(port<1024||port>65535)throw new ArgumentException();
         using var identity=new HostIdentity();using var stop=new CancellationTokenSource();
         Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};
@@ -132,8 +141,13 @@ internal static class Program {
             try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,token);}
             catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){if(!token.IsCancellationRequested)state.Failure(HostStatus.Classify(e,state.Snapshot.Stage));}
         });
-        try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);Application.Run(window);}
-        finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
+        var usb=new UsbHost(identity,window,state,synthetic,port,()=>server.Address??address,stop.Token);
+        if(usbPhone!=null){string selectedSerial=usbPhone;window.Shown+=async(_,_)=>{try{
+            var devices=await Task.Run(UsbAccessory.Phones);var selected=devices.SingleOrDefault(p=>p.Info.Id.Instance.Equals(selectedSerial,StringComparison.OrdinalIgnoreCase));
+            if(selected==null)window.UsbMessage("USB_PHONE_REMOVED");else await usb.Connect(selected);
+        }catch(IOException e){window.UsbMessage(e.Message);}};}
+        try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);window.ConfigureUsb(usb.Connect,()=>usb.Running);Application.Run(window);}
+        finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();usb.DisposeAsync().AsTask().GetAwaiter().GetResult();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
         }catch(SocketException e)when(e.SocketErrorCode==SocketError.AddressAlreadyInUse){MessageBox.Show("CatchWave Host уже работает на этом адресе. Перед запуском новой версии закройте его текущее окно.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Information);return 2;}
         catch(Exception e)when(e is ArgumentException or SocketException){Console.Error.WriteLine("Host address unavailable. Use --listen auto or an active IPv4 address.");MessageBox.Show("Не удалось открыть адрес Host. Подключите USB-модем или локальную сеть и запустите ярлык снова.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 2;}
     }
