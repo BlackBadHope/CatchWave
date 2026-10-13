@@ -1,6 +1,14 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.45-usb-auto-duck**, paired with Android **0.1.45-usb-auto-duck/versionCode 70**. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Output is PCM16 in 20 ms frames over pinned TLS, through LAN or native USB accessory transfers. No resampling or audio endpoint selector is implemented. Network selection is available in Host. The separate CatchWave Output profile built successfully but remains unsigned and is not installed by the portable Host. See [release gates](../docs/PUBLIC-TEST.md).
+Portable .NET 9 Windows desktop Host **0.1.46-audio-output-beta**, paired with unchanged Android **0.1.45-usb-auto-duck/versionCode 70**. Choose an existing Windows playback output in **«Источник звука»**, or keep Windows multimedia default. Shared WASAPI loopback captures that exact endpoint through LAN or native USB. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Output is PCM16 in 20 ms frames. No resampling is implemented. Network and audio source selection are independent. The separate CatchWave Output profile remains unsigned and is not installed by the portable Host. See [beta instructions](../docs/BETA-START-RU.md) and [release gates](../docs/PUBLIC-TEST.md).
+
+## Audio output selection
+
+Select **«Источник звука»** before connecting the phone. In Windows Sound settings or the per-app volume mixer, send the desired player to the same playback device. Choosing a capture source does not change Windows' default or per-app routes. A physically unused digital/virtual output can work when Windows still reports it ACTIVE; unplugged/disabled/missing endpoints remain visible but cannot be selected. Devices are refreshed each time the picker opens.
+
+The choice persists in `%LOCALAPPDATA%/CatchWave/audio-source.json`. It contains only a local endpoint ID and display name, never pairing or audio. Journals exclude those values. Selection is frozen from capture opening through cleanup; disconnect the phone before switching, then reconnect to the same Host. No Host restart/new QR is needed just to choose another source. A removed selected device fails explicitly and is never replaced by another output. Default mode resolves Windows multimedia default at each new audio session; it does not move a running stream after Windows changes the default.
+
+`dotnet CatchWave.Host.dll --audio-list` lists local outputs/states. `--audio-probe default` or `--audio-probe <list-index>` captures at most three seconds and prints only counters/format; it does not emit sound or save PCM. `--audio-self-test` uses fake sources and loopback TLS.
 
 ## Build
 

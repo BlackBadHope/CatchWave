@@ -30,6 +30,11 @@ internal sealed class HostWindow:Form {
     private readonly PictureBox picture=new(),guide=new();
     private readonly Panel pairing=new(),diagnostics=new(),commands=new(),content=new();
     private readonly Button network=Button(""),usb=Button("Подключить по USB");
+    private readonly Button audioOutput=Button("Windows по умолчанию");
+    private readonly Label audioHint=Label(9),audioNote=Label(9);
+    private readonly ContextMenuStrip audioMenu=new();
+    private HostAudioSource? audioSource;
+    private bool audioLoading;
     // Windows still uses a dropdown after Closed fires. Keep it alive until the form is disposed.
     private readonly ContextMenuStrip networkMenu=new();
     private readonly Label privacy=Label(9);
@@ -69,30 +74,37 @@ internal sealed class HostWindow:Form {
         var columns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty,BackColor=Surface};
         columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,350));
         page.Controls.Add(columns,0,1);
-        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Margin=Padding.Empty,BackColor=HostCard.Fill};
+        var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Margin=Padding.Empty,BackColor=HostCard.Fill};
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,110));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,90));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,94));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,34));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,88));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,158));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,66));
         left.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         connection.AutoSize=false;connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
-        var source=Label(11);source.Text=synthetic?"Тестовый источник: тишина":"Подключение к телефону";
-        var sourcePanel=new Panel{Dock=DockStyle.Fill};source.AutoSize=false;source.Height=24;source.Dock=DockStyle.Top;
+        var audioPanel=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};
+        audioPanel.RowStyles.Add(new RowStyle(SizeType.Absolute,24));audioPanel.RowStyles.Add(new RowStyle(SizeType.Absolute,38));audioPanel.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        var audioTitle=Label(10);audioTitle.Text="Источник звука";audioTitle.Dock=DockStyle.Fill;audioTitle.AutoSize=false;audioTitle.Margin=Padding.Empty;
+        audioOutput.Dock=DockStyle.Fill;audioOutput.AccessibleName="Источник звука Windows";audioOutput.Enabled=false;
+        audioHint.AutoSize=false;audioHint.Dock=DockStyle.Fill;audioHint.Margin=Padding.Empty;audioHint.Text=synthetic?"Тестовый источник: тишина":"Выбор источника до подключения телефона.";
+        audioPanel.Controls.Add(audioTitle,0,0);audioPanel.Controls.Add(audioOutput,0,1);audioPanel.Controls.Add(audioHint,0,2);left.Controls.Add(audioPanel,0,1);
+        var source=Label(10);source.Text="Подключение к телефону";
+        var sourcePanel=new Panel{Dock=DockStyle.Fill};source.AutoSize=false;source.Height=20;source.Dock=DockStyle.Top;
         network.Dock=DockStyle.Top;network.Text=new HostEndpoint(address,"Current").ToString();
         network.AccessibleName="Подключение через USB-модем или локальную сеть";
-        usb.Dock=DockStyle.Bottom;sourcePanel.Controls.Add(network);sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(usb);left.Controls.Add(sourcePanel,0,1);
-        controlStatus.AutoSize=false;controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,2);
+        usb.Dock=DockStyle.Bottom;usb.Height=network.Height=34;sourcePanel.Controls.Add(network);sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(usb);left.Controls.Add(sourcePanel,0,2);
+        controlStatus.AutoSize=false;controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,3);
         guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;guide.BackColor=Color.Transparent;
         using(var asset=Assembly.GetExecutingAssembly().GetManifestResourceStream("CatchWave.Host.tilt.png")!){using var img=Image.FromStream(asset);guide.Image=new Bitmap(img);assets.Add(guide.Image);}
-        left.Controls.Add(guide,0,3);
-        control.Dock=DockStyle.Fill;left.Controls.Add(control,0,4);
-        controlHint.AutoSize=false;controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,5);
+        left.Controls.Add(guide,0,4);
+        control.Dock=DockStyle.Fill;left.Controls.Add(control,0,5);
+        controlHint.AutoSize=false;controlHint.Dock=DockStyle.Fill;left.Controls.Add(controlHint,0,6);
         var warning=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};
         warning.SizeChanged+=(_,_)=>{saving.MaximumSize=reason.MaximumSize=new Size(Math.Max(1,warning.ClientSize.Width-24),0);};
-        warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,6);
+        warning.Controls.Add(saving);warning.Controls.Add(reason);left.Controls.Add(warning,0,7);
         var leftCard=new HostCard{Dock=DockStyle.Fill,Margin=new Padding(0,8,20,0)};leftCard.Controls.Add(left);columns.Controls.Add(leftCard,0,0);
 
         var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=Padding.Empty,BackColor=HostCard.Fill};
@@ -134,9 +146,9 @@ internal sealed class HostWindow:Form {
 
         var footer=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=new Padding(0,8,0,0)};
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,270));
-        var note=Label(9);note.Text=synthetic?"Тестовый источник: тишина":"Звук: основной аудиовыход Windows";note.Dock=DockStyle.Fill;note.TextAlign=ContentAlignment.MiddleLeft;
+        audioNote.Text=synthetic?"Тестовый источник: тишина":"Звук: Windows по умолчанию";audioNote.Dock=DockStyle.Fill;audioNote.AutoSize=false;audioNote.AutoEllipsis=true;audioNote.TextAlign=ContentAlignment.MiddleLeft;
         var close=Button("Отключить и закрыть Host");close.Dock=DockStyle.Fill;close.Click+=(_,_)=>Close();
-        footer.Controls.Add(note,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
+        footer.Controls.Add(audioNote,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
 
         control.Click+=(_,_)=>{
             string? pending=trusted?.PendingFingerprint;
@@ -183,10 +195,11 @@ internal sealed class HostWindow:Form {
     }
     internal void Render(){
         if(IsDisposed)return;HostSnapshot s=model.Snapshot;
+        if(audioSource!=null){audioOutput.Text=audioSource.Selected.Name;audioOutput.Enabled=!audioSource.Busy&&!audioLoading;audioHint.Text=audioSource.Hint;audioNote.Text="Звук: "+audioSource.Selected.Name;audioOutput.AccessibleName="Источник звука: "+audioSource.Selected.Name;}
         connection.Text=s.Stage switch {
             HostStage.Listening=>"Подключите телефон",HostStage.Tcp or HostStage.Tls=>"Подключение…",HostStage.Auth=>"Проверка сопряжения…",
             HostStage.Authenticated or HostStage.Format=>"Запуск звука…",HostStage.SilenceSent=>"Тишина с ПК",HostStage.AudioSent=>"Звук отправляется",
-            HostStage.Disconnected=>"Телефон отключён",_=>"Связь прервалась"
+            HostStage.Disconnected=>"Телефон отключён",_=>s.Error==HostError.CaptureFailed?"Источник недоступен":"Связь прервалась"
         };
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
         badge.Text=s.Live?"Подключено · "+transport:s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
@@ -255,6 +268,30 @@ internal sealed class HostWindow:Form {
         if(message.Msg==0x0219&&message.WParam.ToInt64()==0x0007)UsbDevicesChanged?.Invoke();
     }
     internal void UsbAutoStarting(){usbNotice="Подключаем ранее настроенный USB-порт. Разрешение Android сохраняет приоритет.";Render();}
+    internal void ConfigureAudio(HostAudioSource source,Func<IReadOnlyList<AudioOutput>> available){
+        audioSource=source;audioMenu.BackColor=Surface;audioMenu.ForeColor=TextColor;audioMenu.Font=Font;
+        IReadOnlyList<AudioOutput>? Read(){
+            try{var outputs=available();if(IsDisposed)return null;source.Observe(outputs);Render();return outputs;}
+            catch(Exception e)when(e is System.Runtime.InteropServices.COMException or IOException){if(!IsDisposed){audioHint.Text="Не удалось прочитать аудиовыходы. Повторите выбор.";}return null;}
+        }
+        Shown+=(_,_)=>Read();
+        audioOutput.Click+=(_,_)=>{
+            if(source.Busy||audioLoading)return;audioLoading=true;audioOutput.Enabled=false;
+            try{
+                var outputs=Read();if(outputs==null||IsDisposed||source.Busy)return;
+                foreach(ToolStripItem old in audioMenu.Items.Cast<ToolStripItem>().ToArray()){audioMenu.Items.Remove(old);old.Dispose();}
+                void Add(string caption,AudioOutput? next,bool enabled){
+                    var item=new ToolStripMenuItem(caption){Enabled=enabled,Checked=source.Selected.Id==next?.Id};
+                    item.Click+=(_,_)=>{if(source.Select(next)){model.Log.Event("ROUTE",next==null?"OWNER_SELECTED_DEFAULT_AUDIO":"OWNER_SELECTED_AUDIO");}Render();};audioMenu.Items.Add(item);
+                }
+                Add("Windows по умолчанию",null,outputs.Any(output=>output.IsDefault&&output.Active));audioMenu.Items.Add(new ToolStripSeparator());
+                foreach(var output in outputs)Add(output.ToString(),output,output.Active);
+                if(outputs.Count==0)audioMenu.Items.Add(new ToolStripMenuItem("Нет аудиовыходов Windows"){Enabled=false});
+                audioMenu.Show(audioOutput,new Point(0,audioOutput.Height));
+            }finally{audioLoading=false;if(!IsDisposed)Render();}
+        };
+        Render();
+    }
     internal void ConfigureNetworks(HostEndpoint current,Func<HostEndpoint,Task> select,Func<string,string> pairCode,Func<IReadOnlyList<HostEndpoint>> available,int port){
         network.Text=current.ToString();
         networkMenu.BackColor=Surface;networkMenu.ForeColor=TextColor;networkMenu.Font=Font;
@@ -290,8 +327,8 @@ internal sealed class HostWindow:Form {
         if(pairing.Parent!=diagnostics.Parent||pairing.Parent!=commands.Parent||pairing.Parent is TableLayoutPanel)throw new Exception("Content panels must share one overlay container");
         if(pairing.Visible&&(privacy.Height<privacy.GetPreferredSize(new Size(privacy.Width,0)).Height||picture.Height<picture.Image!.Height||picture.Width<picture.Image.Width))throw new Exception("QR or privacy text clipped");
         if(phone.Bottom>phone.Parent!.ClientSize.Height||diagnosticAction.Bottom>diagnosticAction.Parent!.ClientSize.Height)throw new Exception("Right column overflow");
-        foreach(Control item in new Control[]{connection,controlStatus,controlHint,control,network})if(item.Right>item.Parent!.ClientSize.Width||item.Bottom>item.Parent.ClientSize.Height)throw new Exception("Main control clipped: "+item.GetType().Name);
+        foreach(Control item in new Control[]{connection,controlStatus,controlHint,control,network,usb,audioOutput,audioHint})if(item.Right>item.Parent!.ClientSize.Width||item.Bottom>item.Parent.ClientSize.Height)throw new Exception("Main control clipped: "+item.GetType().Name);
     }
     internal Bitmap RenderClient(){using var contentBitmap=new Bitmap(Controls[0].Width,Controls[0].Height);Controls[0].DrawToBitmap(contentBitmap,new Rectangle(Point.Empty,Controls[0].Size));var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height);using var graphics=Graphics.FromImage(bitmap);graphics.Clear(Surface);graphics.DrawImageUnscaled(contentBitmap,Controls[0].Location);return bitmap;}
-    protected override void Dispose(bool disposing){if(disposing){timer.Dispose();networkMenu.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing){timer.Dispose();networkMenu.Dispose();audioMenu.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
 }

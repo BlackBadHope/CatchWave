@@ -4,7 +4,7 @@ using System.Text;
 using System.Security.Cryptography;
 namespace CatchWave.Host;
 
-internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus lan,bool synthetic,int port,Func<string> address,CancellationToken outer,UsbAutoSettings? auto=null):IAsyncDisposable {
+internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus lan,bool synthetic,int port,Func<string> address,CancellationToken outer,UsbAutoSettings? auto=null,HostAudioSource? audio=null):IAsyncDisposable {
     private CancellationTokenSource? active;private Task worker=Task.CompletedTask;
     internal bool Running=>!worker.IsCompleted;
     internal Task Connect(UsbAccessory.Phone selected,bool allowSetup=true){
@@ -24,7 +24,7 @@ internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus
                     state.Log.Event("USB","USB_BOOTSTRAP_ACK");
                 }
                 window.UseStatus(state,"USB");
-                await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(pipe,token);
+                await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute,audio:audio).Run(pipe,token);
             }catch(Exception e)when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or NotSupportedException or System.Runtime.InteropServices.COMException){
                 if(!token.IsCancellationRequested)window.UsbMessage(e is IOException?e.Message:"USB_SESSION_ENDED");
             }finally{state.Changed-=Authenticated;window.UseStatus(lan,"Wi-Fi");}

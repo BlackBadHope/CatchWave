@@ -37,6 +37,20 @@ internal static class HostUiTest {
             menu.Close(ToolStripDropDownCloseReason.AppClicked);Application.DoEvents();
             Check(!menu.IsDisposed&&form.Visible);
         }
+        var selected=new HostAudioSource(factory:(_,_)=>new SilenceSource());
+        var headphones=new AudioOutput("fixture-active","Fixture headphones",1,true);
+        form.ConfigureAudio(selected,()=>new[]{headphones,new AudioOutput("fixture-unplugged","Fixture unplugged",8)});
+        var audioButton=(Button)typeof(HostWindow).GetField("audioOutput",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        var audioMenu=(ContextMenuStrip)typeof(HostWindow).GetField("audioMenu",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        for(int i=0;i<3;i++){
+            audioButton.PerformClick();var until=System.Diagnostics.Stopwatch.StartNew();
+            while(!audioMenu.Visible&&until.ElapsedMilliseconds<1000){Application.DoEvents();Thread.Sleep(5);}
+            Check(audioMenu.Visible&&audioMenu.Items.Count==4&&!audioMenu.Items[3].Enabled);
+            ((ToolStripMenuItem)audioMenu.Items[2]).PerformClick();audioMenu.Close(ToolStripDropDownCloseReason.ItemClicked);Application.DoEvents();
+            Check(selected.Selected.Id==headphones.Id&&audioButton.Text==headphones.Name&&!audioMenu.IsDisposed);
+        }
+        using(selected.Open(null)){form.Render();Check(!audioButton.Enabled);}
+        form.Render();Check(audioButton.Enabled);form.AssertLayout();
         form.Close();
     }catch(Exception e){failure=e;}});thread.SetApartmentState(ApartmentState.STA);thread.Start();if(!thread.Join(TimeSpan.FromSeconds(5)))throw new Exception("UI test timed out");if(failure!=null)throw failure;return checks;}
 }

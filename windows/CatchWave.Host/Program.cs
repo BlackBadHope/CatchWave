@@ -31,7 +31,7 @@ internal sealed class HostIdentity:IDisposable {
     private static string Url(byte[] value)=>Convert.ToBase64String(value).TrimEnd('=').Replace('+','-').Replace('/','_');
     public void Dispose(){Certificate.Dispose();key.Dispose();CryptographicOperations.ZeroMemory(Token);}
 }
-internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allowMediaKeys,Func<byte,bool>? commandSink=null,Func<bool>? mediaEnabled=null,HostStatus? status=null,Func<HostPermission>? permission=null,Func<byte,HostPermission,bool>? authorizedSink=null,Func<Task>? audioWriteBarrier=null,Action<bool>? commandDecision=null,Action? commandArrived=null) {
+internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allowMediaKeys,Func<byte,bool>? commandSink=null,Func<bool>? mediaEnabled=null,HostStatus? status=null,Func<HostPermission>? permission=null,Func<byte,HostPermission,bool>? authorizedSink=null,Func<Task>? audioWriteBarrier=null,Action<bool>? commandDecision=null,Action? commandArrived=null,HostAudioSource? audio=null) {
     internal int AcceptedCommands;
     private HostPermission CurrentPermission()=>permission?.Invoke()??new(mediaEnabled?.Invoke()??allowMediaKeys,0);
     internal async Task Run(TcpClient peer,CancellationToken outer) {
@@ -62,7 +62,7 @@ internal sealed class HostSession(HostIdentity identity,bool synthetic,bool allo
         var writeLock=new SemaphoreSlim(1);long latest=-1,latestAt=-10000;var clock=Stopwatch.StartNew();
         Task capture=Task.Run(()=>{
             try {
-                using IPcmSource source=synthetic?new SilenceSource():new WasapiSource(status?.Log);formatReady.TrySetResult(source.Format);
+                using IPcmSource source=synthetic?new SilenceSource():audio?.Open(status?.Log)??new WasapiSource(status?.Log);formatReady.TrySetResult(source.Format);
                 long sequence=0,due=0;
                 while(!lifetime.IsCancellationRequested){
                     long now=clock.ElapsedMilliseconds;
@@ -143,6 +143,9 @@ internal static class Program {
         if(args.Length==2&&args[0]=="--ui-preview")return HostPreview.Run(args[1]);
         if(args.Length==3&&args[0]=="--interop-test")return InteropTest.Run(args[1],args[2]).GetAwaiter().GetResult();
         if(args.SequenceEqual(new[]{"--self-test"}))return SelfTest.Run().GetAwaiter().GetResult();
+        if(args.SequenceEqual(new[]{"--audio-self-test"})){try{Console.WriteLine("PASS: "+AudioSourceTest.Run()+" audio selection checks; fake PCM, no device access");return 0;}catch(Exception e){Console.Error.WriteLine("FAIL: "+e.Message);return 1;}}
+        if(args.SequenceEqual(new[]{"--audio-list"})){foreach(var output in AudioOutputs.Read().Select((value,index)=>(value,index)))Console.WriteLine($"{output.index}: {output.value}");return 0;}
+        if(args.Length==2&&args[0]=="--audio-probe")return AudioSourceTest.Probe(args[1]);
         if(args.Length==3&&args[0]=="--self-test"&&args[1]=="--qr-fixture")return SelfTest.Run(args[2]).GetAwaiter().GetResult();
         // Double-clicking the portable desktop app must open its pairing window.
         if(args.Length==0)args=["--listen","auto"];
@@ -159,13 +162,14 @@ internal static class Program {
         Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         var preferences=HostControlSettings.Local();
-        using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
+        using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);var audio=new HostAudioSource(HostAudioSettings.Local());using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
+        if(!synthetic)window.ConfigureAudio(audio,AudioOutputs.Read);
         var server=new HostListener(stop.Token,async(peer,token)=>{
-            try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,token);}
+            try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute,audio:audio).Run(peer,token);}
             catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){/* Session owns post-auth status; pre-auth failures cannot replace it. */}
         });
         var usbAutoSettings=UsbAutoSettings.Local();usbAutoSettings.Load();
-        var usb=new UsbHost(identity,window,state,synthetic,port,()=>server.Address??address,stop.Token,usbAutoSettings);
+        var usb=new UsbHost(identity,window,state,synthetic,port,()=>server.Address??address,stop.Token,usbAutoSettings,audio);
         using var usbAuto=new UsbAutoConnect(window,usb,usbAutoSettings);
         if(usbPhone!=null){string selectedSerial=usbPhone;window.Shown+=async(_,_)=>{try{
             var devices=await Task.Run(UsbAccessory.Phones);var selected=devices.SingleOrDefault(p=>p.Info.Id.Instance.Equals(selectedSerial,StringComparison.OrdinalIgnoreCase));

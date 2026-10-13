@@ -1,9 +1,12 @@
-# Public test candidate 0.1.45
+# Public beta: Host 0.1.46 / Android 0.1.45
 
 This checkpoint is an **experimental candidate**, not a stable release or AudioRelay parity claim. Android is the only client; Windows x64 is the only accepted Host architecture. APK and Host must come from the matching candidate package. Exact revision, hashes and verification results belong to the release build manifest.
 
+For sharing with friends, use the [Russian quick start](BETA-START-RU.md). The selected existing Windows output replaces the need for a new CatchWave driver in this beta; fresh ordinary USB setup remains unaccepted.
+
 ## Current scope
 
+- Saved selection of an existing Windows output, shared by Wi-Fi/USB; no silent replacement of unavailable devices. Select before connecting and route the desired Windows player to that same output.
 - Wi-Fi PC audio with local pinned pairing, one confirmation after QR scanning, explicit disconnect, bounded recovery and phone-media priority.
 - Button-only gesture activation, independent permission switches, held Android volume, play/pause/next/previous and local mute.
 - Native AOA/WinUSB cable audio: heard on the OnePlus 12 in 0.1.43, without ADB carrying audio or USB tethering. Android 0.1.44 fixes single-attempt handover, learns Wi-Fi pairing after successful USB output and preserves a selected VPN.
@@ -14,9 +17,9 @@ This checkpoint is an **experimental candidate**, not a stable release or AudioR
 | Gate | Current evidence / required acceptance |
 | --- | --- |
 | Android build/lint | 0.1.45: 383 tests passed, lint 0 errors / 20 warnings; exact APK hash is recorded in its build manifest |
-| Windows and Java interoperability | Exact final 0.1.45 revision/hashes/checks belong to its build manifest; prior 0.1.44 checks remain scoped to that artifact |
-| Installed Host / shortcut | 0.1.44 installed; all copied file hashes matched; launch through the actual desktop shortcut opened the window and bound port 49372 |
-| Installed APK | 0.1.44/code68 installed on the pilot; signer preserved and APK hash matched the prepared artifact |
+| Windows and Java interoperability | Host 0.1.46 exact revision/hashes/checks belong to the beta manifest; Android 0.1.45 remains byte-identical to its prior verified release |
+| Installed Host / shortcut | Latest installation and desktop launch results are recorded in the beta build manifest; previous 0.1.45 installed checks remain scoped to that artifact |
+| Installed APK | 0.1.45/code70 installed on the pilot; unchanged APK/signer are reused in this Host-only beta |
 | Wi-Fi sound | Previously heard; repeat on the final APK/Host with actual PC media |
 | Cable sound | Owner confirmed USB working in 0.1.44; final 0.1.45 auto-pick still needs a real cable reattachment |
 | USB to Wi-Fi | Old candidate worked intermittently; new recovery/cancellation tests passed; three physical unplug cycles remain required |
