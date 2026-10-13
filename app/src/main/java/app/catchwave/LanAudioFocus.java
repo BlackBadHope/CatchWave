@@ -35,6 +35,11 @@ final class LanAudioFocus implements AutoCloseable {
     }
     boolean start(){
         if(closed||!alive.getAsBoolean())return false;
+        // Starting/switching a cable route must not take focus away from phone media.
+        // No CatchWave track exists yet; wait for real phone playback to become quiet.
+        boolean busy;
+        try{busy=platform.phoneAudioActive();}catch(RuntimeException unavailable){busy=true;}
+        if(busy){changed(AudioManager.AUDIOFOCUS_LOSS);return true;}
         int result=platform.request(this::changed);
         if(result==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){changed(AudioManager.AUDIOFOCUS_GAIN);return true;}
         if(result==AudioManager.AUDIOFOCUS_REQUEST_DELAYED){changed(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);return true;}
@@ -44,8 +49,11 @@ final class LanAudioFocus implements AutoCloseable {
         if(closed||!alive.getAsBoolean())return;
         if(change==AudioManager.AUDIOFOCUS_GAIN){
             paused=permanent=false;phoneWasActive=false;quietSince=-1;main.removeCallbacks(check);
-        }else if(change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK){
+        }else if(change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT){
             paused=true;permanent=change==AudioManager.AUDIOFOCUS_LOSS;phoneWasActive=false;quietSince=-1;
+        }else if(change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK){
+            // Duck is not permission to resume a stream already paused for phone media.
+            if(paused)return;
         }else return;
         output.accept(change);
         if(permanent){
@@ -89,7 +97,7 @@ final class LanAudioFocus implements AutoCloseable {
         public int request(IntConsumer listener){
             if(request==null)request=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                .setAcceptsDelayedFocusGain(true).setWillPauseWhenDucked(true)
+                .setAcceptsDelayedFocusGain(true).setWillPauseWhenDucked(false)
                 .setOnAudioFocusChangeListener(listener::accept,main).build();
             return manager.requestAudioFocus(request);
         }

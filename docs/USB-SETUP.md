@@ -4,14 +4,14 @@ CatchWave's cable transport uses Android Open Accessory (AOA) and Windows WinUSB
 
 ## Current acceptance boundary
 
-USB sound was heard on one OnePlus 12 with Android 16 and Host 0.1.42 / Android 0.1.43. The pilot already had a working WinUSB control interface for initial AOA negotiation. This does not certify an untouched PC/phone: the generic UsbDk control fallback returned INVALID_PARAMETER. Fresh ordinary MTP setup and restoring its original binding are still release gates. Do not use Zadig, disable driver enforcement or replace every phone interface as an undocumented workaround.
+USB sound was heard on one OnePlus 12 with Android 16 in 0.1.43 and confirmed again by the owner in 0.1.44. The pilot already had a working WinUSB control interface for initial AOA negotiation. This does not certify an untouched PC/phone: the generic UsbDk control fallback returned INVALID_PARAMETER. Fresh ordinary MTP setup and restoring its original binding are still release gates. Do not use Zadig, disable driver enforcement or replace every phone interface as an undocumented workaround.
 
 ## Pilot connection
 
 1. Install matching candidate APK and portable Host; keep all Host files together.
-2. Connect a data-capable USB cable. Open CatchWave and select USB on the PC.
+2. Connect a data-capable USB cable. First-time or changed device/port configuration still needs explicit USB selection on PC. After an authenticated session, 0.1.45 automatically tries that known device configuration and port on the next attachment. Multiple phones require a selection; auto-pick never installs or binds a driver.
 3. If Host lacks its pinned signed UsbDk component, choose its explicit component setup. Normal administrator consent may be requested; setup is not automatic at startup. A restart can be necessary.
-4. Allow CatchWave access to the USB accessory on Android and press **«Подключить звук по USB»**. Host may request separate administrator consent to bind only the selected accessory audio interface to Microsoft's inbox WinUSB. The ADB sibling interface is excluded.
+4. Allow CatchWave access to the USB accessory on Android. A current owner-started session continues on USB without a second app button. If audio was explicitly stopped or the app is cold, press its single USB action once; the private action immediately connects or requests Android permission. External attach activity launches cannot override Disconnect. Host may request separate administrator consent to bind only the selected accessory audio interface to Microsoft's inbox WinUSB. The ADB sibling interface is excluded.
 5. Check that phone Diagnostics says **Подключение: USB**, that Host reports USB authorization, and listen to actual PC media. Receiving counters alone do not confirm sound.
 
 After successful authenticated USB output, 0.1.44 remembers the same Host's Wi-Fi address and certificate automatically. With Wi-Fi already connected, removing the cable starts that pinned LAN route without another QR scan. Transient failures have up to three retries within 20 seconds; **«Отключиться»** cancels all retries. Certificate and protocol errors do not silently re-pair. An active VPN is preserved. A short gap while TLS/AudioTrack reconnect is possible.

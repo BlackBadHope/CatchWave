@@ -164,13 +164,15 @@ internal static class Program {
             try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(peer,token);}
             catch(Exception e)when(e is IOException or AuthenticationException or OperationCanceledException or NotSupportedException or System.Runtime.InteropServices.COMException){/* Session owns post-auth status; pre-auth failures cannot replace it. */}
         });
-        var usb=new UsbHost(identity,window,state,synthetic,port,()=>server.Address??address,stop.Token);
+        var usbAutoSettings=UsbAutoSettings.Local();usbAutoSettings.Load();
+        var usb=new UsbHost(identity,window,state,synthetic,port,()=>server.Address??address,stop.Token,usbAutoSettings);
+        using var usbAuto=new UsbAutoConnect(window,usb,usbAutoSettings);
         if(usbPhone!=null){string selectedSerial=usbPhone;window.Shown+=async(_,_)=>{try{
             var devices=await Task.Run(UsbAccessory.Phones);var selected=devices.SingleOrDefault(p=>p.Info.Id.Instance.Equals(selectedSerial,StringComparison.OrdinalIgnoreCase));
             if(selected==null)window.UsbMessage("USB_PHONE_REMOVED");else await usb.Connect(selected);
         }catch(IOException e){window.UsbMessage(e.Message);}};}
-        try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);window.ConfigureUsb(usb.Connect,()=>usb.Running);Application.Run(window);}
-        finally{diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();usb.DisposeAsync().AsTask().GetAwaiter().GetResult();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
+        try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);window.ConfigureUsb(usbAuto.Manual,()=>usb.Running);Application.Run(window);}
+        finally{usbAuto.Dispose();diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();usb.DisposeAsync().AsTask().GetAwaiter().GetResult();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
         }catch(SocketException e)when(e.SocketErrorCode==SocketError.AddressAlreadyInUse){MessageBox.Show("CatchWave Host уже работает на этом адресе. Перед запуском новой версии закройте его текущее окно.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Information);return 2;}
         catch(Exception e)when(e is ArgumentException or SocketException){Console.Error.WriteLine("Host address unavailable. Use --listen auto or an active IPv4 address.");MessageBox.Show("Не удалось открыть адрес Host. Подключите USB-модем или локальную сеть и запустите ярлык снова.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 2;}
     }

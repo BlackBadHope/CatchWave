@@ -1,6 +1,6 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.44-public-test-candidate**, paired with Android **0.1.44-public-test-candidate/versionCode 68**. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Output is PCM16 in 20 ms frames over pinned TLS, through LAN or native USB accessory transfers. No resampling or audio endpoint selector is implemented. Network selection is available in Host. The separate CatchWave Output profile built successfully but remains unsigned and is not installed by the portable Host. See [release gates](../docs/PUBLIC-TEST.md).
+Portable .NET 9 Windows desktop Host **0.1.45-usb-auto-duck**, paired with Android **0.1.45-usb-auto-duck/versionCode 70**. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Output is PCM16 in 20 ms frames over pinned TLS, through LAN or native USB accessory transfers. No resampling or audio endpoint selector is implemented. Network selection is available in Host. The separate CatchWave Output profile built successfully but remains unsigned and is not installed by the portable Host. See [release gates](../docs/PUBLIC-TEST.md).
 
 ## Build
 
@@ -56,3 +56,7 @@ The connection button in Host lists current eligible interfaces. Selecting anoth
 Scan the Host QR in CatchWave as usual. The cable carries the IP/TLS audio stream through Windows' existing USB network driver; no ADB, new phone driver, USB-function replacement or home Wi-Fi is needed for this data path. Physical USB listening and cable reconnect still require device acceptance; loopback tests are not that acceptance.
 
 The window limits content width and height even when maximized, and uses one content container for pairing, commands and diagnostics. PC permission and phone gesture readiness are separate states. Changing the network never grants control permission or auto-activates Android gestures.
+
+## USB auto-pick in 0.1.45
+
+After successful USB authentication, Host remembers a bounded hash of that device configuration and physical port. On startup/device-change events it tries that already configured route once per cable attachment, with one session at a time. A new phone/configuration, multiple attached phones and driver installation retain explicit selection. An ended session on the attached cable does not create a retry loop. No serial or pairing data is logged. Changing USB mode/port can require one manual connection.

@@ -4,16 +4,19 @@ using System.Text;
 using System.Security.Cryptography;
 namespace CatchWave.Host;
 
-internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus lan,bool synthetic,int port,Func<string> address,CancellationToken outer):IAsyncDisposable {
+internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus lan,bool synthetic,int port,Func<string> address,CancellationToken outer,UsbAutoSettings? auto=null):IAsyncDisposable {
     private CancellationTokenSource? active;private Task worker=Task.CompletedTask;
     internal bool Running=>!worker.IsCompleted;
-    internal Task Connect(UsbAccessory.Phone selected){
+    internal Task Connect(UsbAccessory.Phone selected,bool allowSetup=true){
         if(Running)return Task.CompletedTask;
         active?.Dispose();active=CancellationTokenSource.CreateLinkedTokenSource(outer);var token=active.Token;
         worker=Task.Run(async()=>{
             var state=new HostStatus(lan.Log);
+            bool remembered=false;
+            void Authenticated(){if(!remembered&&state.Snapshot.Stage==HostStage.Authenticated){remembered=true;if(auto!=null&&!auto.Remember(selected))state.Log.Event("USB","USB_AUTO_SAVE_FAILED");}}
+            state.Changed+=Authenticated;
             try{
-                using Stream pipe=await UsbAccessory.Open(selected,token,(code,values)=>state.Log.Event("USB",code,values));
+                using Stream pipe=await UsbAccessory.Open(selected,token,(code,values)=>state.Log.Event("USB",code,values),allowSetup);
                 using(var setup=CancellationTokenSource.CreateLinkedTokenSource(token)){
                     setup.CancelAfter(TimeSpan.FromSeconds(90));
                     state.Log.Event("USB","USB_BOOTSTRAP_START");
@@ -24,7 +27,7 @@ internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus
                 await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(pipe,token);
             }catch(Exception e)when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or NotSupportedException or System.Runtime.InteropServices.COMException){
                 if(!token.IsCancellationRequested)window.UsbMessage(e is IOException?e.Message:"USB_SESSION_ENDED");
-            }finally{window.UseStatus(lan,"Wi-Fi");}
+            }finally{state.Changed-=Authenticated;window.UseStatus(lan,"Wi-Fi");}
         },CancellationToken.None);
         return Task.CompletedTask;
     }

@@ -60,7 +60,7 @@ internal static class UsbAccessory {
         internal Device(DeviceId id,ProgressSink? progress=null):base(true){Progress=progress;SetHandle(Native.Redirect(ref id));int error=Marshal.GetLastPInvokeError();if(IsInvalid){progress?.Invoke("USB_OPEN_FAILED",error);throw new IOException(error==1167?"USB_DEVICE_NOT_READY":"USB_OPEN_FAILED");}}
         protected override bool ReleaseHandle()=>Native.Stop(handle);
     }
-    internal static async Task<Stream> Open(Phone selected,CancellationToken stop,ProgressSink? progress=null){
+    internal static async Task<Stream> Open(Phone selected,CancellationToken stop,ProgressSink? progress=null,bool allowSetup=true){
         stop.ThrowIfCancellationRequested();Load();
         // Reject stale selections; never substitute a different phone or try every attached USB device.
         var phone=Phones().SingleOrDefault(p=>p.Info.Id.Device==selected.Info.Id.Device&&p.Info.Id.Instance==selected.Info.Id.Instance)
@@ -89,6 +89,7 @@ internal static class UsbAccessory {
             progress?.Invoke("USB_ACCESSORY_ENUMERATED");
         }
         var winUsbData=WinUsbBulkStream.TryOpen(phone,stop,progress);if(winUsbData!=null)return winUsbData;
+        if(!allowSetup)throw new IOException("USB_MANUAL_SETUP_REQUIRED");
         progress?.Invoke("USB_SIGNED_BINDING_REQUIRED");await UsbComponent.BindAccessory(phone,stop);
         winUsbData=WinUsbBulkStream.TryOpen(phone,stop,progress);if(winUsbData!=null)return winUsbData;
         throw new IOException("USB_BINDING_RESTART_REQUIRED");

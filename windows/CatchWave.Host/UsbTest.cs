@@ -23,6 +23,21 @@ internal static class UsbTest {
         var selected=new UsbAccessory.Phone(new UsbAccessory.DeviceInfo{Id=new UsbAccessory.DeviceId{Device=@"USB\VID_18D1&PID_2D01",Instance="PHONE-ONE"},Descriptor=new UsbAccessory.DeviceDescriptor{Vendor=0x18d1,Product=0x2d01}});
         if(!WinUsbBulkStream.MatchesIdentity(@"USB\VID_18D1&PID_2D01&MI_00\CHILD",@"USB\VID_18D1&PID_2D01\phone-one",selected)||WinUsbBulkStream.MatchesIdentity(@"USB\VID_18D1&PID_2D01&MI_01\CHILD",@"USB\VID_18D1&PID_2D01\PHONE-ONE",selected)||WinUsbBulkStream.MatchesIdentity(@"USB\VID_18D1&PID_2D01&MI_00\CHILD",@"USB\VID_18D1&PID_2D01\PHONE-TWO",selected))throw new Exception("WinUSB data must exclude ADB and another phone");checks++;
         try{WinUsbBulkStream.TryOpen(selected,cancelled.Token,null);throw new Exception("Cancelled WinUSB data reached device enumeration");}catch(OperationCanceledException){checks++;}
+        var autoSettings=new UsbAutoSettings();var autoPolicy=new UsbAutoPolicy(autoSettings);
+        if(autoPolicy.Select([selected],false)!=null)throw new Exception("A new USB route must remain owner-selected");checks++;
+        if(!autoSettings.Remember(selected)||autoPolicy.Select([selected],false)!=selected)throw new Exception("Authenticated route should be picked once");checks++;
+        if(autoPolicy.Select([selected],false)!=null)throw new Exception("Ended session on an attached cable must not restart itself");checks++;
+        autoPolicy.Select([],false);
+        if(autoPolicy.Select([selected],false)!=selected)throw new Exception("Physical reattachment should rearm a known route");checks++;
+        var another=new UsbAccessory.Phone(new UsbAccessory.DeviceInfo{Id=selected.Info.Id,Descriptor=selected.Info.Descriptor,Filter=selected.Info.Filter,Port=selected.Info.Port+1});
+        autoSettings.Remember(another);autoPolicy.Select([],false);
+        if(autoPolicy.Select([selected,another],false)!=null)throw new Exception("Multiple phones require explicit selection");checks++;
+        if(autoPolicy.Select([selected],true)!=null||autoPolicy.Select([selected],false)!=null)throw new Exception("Active session must latch its port and not restart after owner stop");checks++;
+        autoPolicy.Select([],false);autoPolicy.Manual(selected);
+        if(autoPolicy.Select([selected],false)!=null)throw new Exception("Manual connection and device events must not start two workers");checks++;
+        var otherIdentity=new UsbAccessory.Phone(new UsbAccessory.DeviceInfo{Id=new UsbAccessory.DeviceId{Device=selected.Info.Id.Device,Instance="PHONE-TWO"},Descriptor=selected.Info.Descriptor,Filter=selected.Info.Filter,Port=selected.Info.Port});
+        var differentMode=new UsbAccessory.Phone(new UsbAccessory.DeviceInfo{Id=new UsbAccessory.DeviceId{Device=@"USB\VID_22D9&PID_MODEM",Instance=selected.Info.Id.Instance},Descriptor=selected.Info.Descriptor,Filter=selected.Info.Filter,Port=selected.Info.Port});
+        if(autoSettings.Allowed(otherIdentity)||autoSettings.Allowed(differentMode))throw new Exception("A remembered port must not select another phone or USB modem configuration");checks++;
         return checks;
     }
 }

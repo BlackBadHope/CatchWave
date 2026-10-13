@@ -220,7 +220,7 @@ internal sealed class HostWindow:Form {
     }
     internal void UsbMessage(string code){
         if(IsDisposed||!IsHandleCreated)return;if(InvokeRequired){BeginInvoke(()=>UsbMessage(code));return;}
-        usbNotice=code switch{"USB_BINDING_FAILED"=>"Не удалось настроить USB-подключение в Windows. Подробности — в диагностике.","USB_BINDING_RESTART_REQUIRED"=>"Настройка USB завершена. Переподключите кабель и повторите подключение.","USB_SETUP_CANCELLED"=>"Настройка USB отменена. Wi-Fi остаётся доступен.","USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.","USB_NATIVE_INVALID_PARAMETER"=>"USB-компонент Windows отклонил запрос. Подключитесь по Wi-Fi; код ошибки есть в диагностике.","USB_DEVICE_NOT_READY"=>"Windows не смогла открыть телефон по USB. Переподключите кабель; Wi-Fi остаётся доступен.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
+        usbNotice=code switch{"USB_MANUAL_SETUP_REQUIRED"=>"Для этого USB-подключения нужна ручная настройка. Нажмите «Подключить по USB».","USB_BINDING_FAILED"=>"Не удалось настроить USB-подключение в Windows. Подробности — в диагностике.","USB_BINDING_RESTART_REQUIRED"=>"Настройка USB завершена. Переподключите кабель и повторите подключение.","USB_SETUP_CANCELLED"=>"Настройка USB отменена. Wi-Fi остаётся доступен.","USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.","USB_NATIVE_INVALID_PARAMETER"=>"USB-компонент Windows отклонил запрос. Подключитесь по Wi-Fi; код ошибки есть в диагностике.","USB_DEVICE_NOT_READY"=>"Windows не смогла открыть телефон по USB. Переподключите кабель; Wi-Fi остаётся доступен.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
         model.Log.Event("USB",code.StartsWith("USB_",StringComparison.Ordinal)?code:"SESSION_ENDED");
     }
     internal void ConfigureUsb(Func<UsbAccessory.Phone,Task> connect,Func<bool> running){
@@ -249,6 +249,12 @@ internal sealed class HostWindow:Form {
             finally{if(!IsDisposed)usb.Enabled=true;}
         };
     }
+    internal event Action? UsbDevicesChanged;
+    protected override void WndProc(ref Message message){
+        base.WndProc(ref message);
+        if(message.Msg==0x0219&&message.WParam.ToInt64()==0x0007)UsbDevicesChanged?.Invoke();
+    }
+    internal void UsbAutoStarting(){usbNotice="Подключаем ранее настроенный USB-порт. Разрешение Android сохраняет приоритет.";Render();}
     internal void ConfigureNetworks(HostEndpoint current,Func<HostEndpoint,Task> select,Func<string,string> pairCode,Func<IReadOnlyList<HostEndpoint>> available,int port){
         network.Text=current.ToString();
         networkMenu.BackColor=Surface;networkMenu.ForeColor=TextColor;networkMenu.Font=Font;

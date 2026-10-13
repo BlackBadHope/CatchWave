@@ -40,4 +40,21 @@ public class LanReceiverFocusTest {
         Method write=LanReceiver.class.getDeclaredMethod("writePcm",AudioTrack.class,byte[].class,long.class);write.setAccessible(true);
         assertEquals(Boolean.FALSE,write.invoke(receiver,track,new byte[3840],oldEpoch));
     }
+    @Test public void notificationKeepsAudioAndQueuePlayingWithoutChangingOutputEpoch()throws Exception{
+        @SuppressWarnings("unchecked") ArrayBlockingQueue<byte[]> audio=(ArrayBlockingQueue<byte[]>)field(receiver,"audio");audio.offer(new byte[16]);
+        long epoch=(long)field(receiver,"outputEpoch");receiver.focus(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);
+        assertFalse(receiver.focusPaused());assertEquals(AudioTrack.PLAYSTATE_PLAYING,track.getPlayState());assertEquals(1,audio.size());assertEquals(epoch,field(receiver,"outputEpoch"));
+        assertTrue((boolean)field(receiver,"focusDucked"));receiver.focus(AudioManager.AUDIOFOCUS_GAIN);
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING,track.getPlayState());assertFalse((boolean)field(receiver,"focusDucked"));
+    }
+    @Test public void duckAndGainPreserveOwnerVolumeAndMute()throws Exception{
+        receiver.volume(0.35f);receiver.focus(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);receiver.focus(AudioManager.AUDIOFOCUS_GAIN);
+        assertEquals(0.35f,(float)field(receiver,"requestedVolume"),0f);
+        receiver.volume(0f);receiver.focus(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);receiver.focus(AudioManager.AUDIOFOCUS_GAIN);
+        assertEquals(0f,(float)field(receiver,"requestedVolume"),0f);
+    }
+    @Test public void notificationDoesNotOverrideFullPhoneMediaPause()throws Exception{
+        receiver.focus(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);receiver.focus(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);
+        assertTrue(receiver.focusPaused());assertEquals(AudioTrack.PLAYSTATE_PAUSED,track.getPlayState());assertFalse((boolean)field(receiver,"focusDucked"));
+    }
 }

@@ -28,15 +28,40 @@ public class LanAudioFocusTest {
         assertEquals(2,phone.requests);assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_GAIN),output.get(output.size()-1));
         advance(3000);assertEquals("No request loop after recovery",2,phone.requests);
     }
+    @Test public void connectingUsbDuringPhoneMediaDoesNotStealInitialFocus(){
+        focus.close();FakePhone playing=new FakePhone();playing.busy=true;
+        focus=new LanAudioFocus(new Handler(Looper.getMainLooper()),playing,()->alive,()->fresh,output::add);
+        assertTrue(focus.start());advance(5000);assertEquals(0,playing.requests);
+        assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_LOSS),output.get(output.size()-1));
+        playing.busy=false;playing.activityChanged.run();advance(850);assertEquals(1,playing.requests);
+        assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_GAIN),output.get(output.size()-1));
+    }
     @Test public void transientLossWaitsForAndroidGainWithoutReRequesting(){
         phone.change(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);advance(10000);assertEquals(1,phone.requests);
         phone.change(AudioManager.AUDIOFOCUS_GAIN);assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_GAIN),output.get(output.size()-1));
     }
-    @Test public void duckRequestPausesAndResumesInsteadOfMixing(){
+    @Test public void duckRequestLeavesPlaybackActiveAndWaitsForGainWithoutReRequest(){
         phone.change(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);
         assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK),output.get(output.size()-1));
         advance(3000);assertEquals(1,phone.requests);phone.change(AudioManager.AUDIOFOCUS_GAIN);
         assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_GAIN),output.get(output.size()-1));
+    }
+    @Test public void duckDuringPhoneMediaCannotResumeIt(){
+        phone.change(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);int paused=output.size();
+        phone.change(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);
+        assertEquals(paused,output.size());assertEquals(1,phone.requests);
+        phone.change(AudioManager.AUDIOFOCUS_GAIN);assertEquals(Integer.valueOf(AudioManager.AUDIOFOCUS_GAIN),output.get(output.size()-1));
+    }
+    @Test public void androidRequestAllowsNativeNotificationDucking()throws Exception{
+        AudioManager manager=RuntimeEnvironment.getApplication().getSystemService(AudioManager.class);
+        LanAudioFocus nativeFocus=new LanAudioFocus(new Handler(Looper.getMainLooper()),manager,()->true,()->true,value->{});
+        try{
+            nativeFocus.start();java.lang.reflect.Field p=LanAudioFocus.class.getDeclaredField("platform");p.setAccessible(true);Object platform=p.get(nativeFocus);
+            java.lang.reflect.Field r=platform.getClass().getDeclaredField("request");r.setAccessible(true);
+            android.media.AudioFocusRequest request=(android.media.AudioFocusRequest)r.get(platform);
+            assertFalse("A notification must duck rather than pause",request.willPauseWhenDucked());
+            assertEquals(android.media.AudioAttributes.CONTENT_TYPE_MUSIC,request.getAudioAttributes().getContentType());
+        }finally{nativeFocus.close();}
     }
     @Test public void briefGapInPhonePlaybackDoesNotStealFocus(){
         phone.busy=true;phone.change(AudioManager.AUDIOFOCUS_LOSS);

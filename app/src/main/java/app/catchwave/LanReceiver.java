@@ -27,7 +27,8 @@ final class LanReceiver implements AutoCloseable {
     private final ArrayBlockingQueue<byte[]> audio=new ArrayBlockingQueue<>(8);
     private final ArrayBlockingQueue<Control> controls=new ArrayBlockingQueue<>(4);
     private final AtomicBoolean active=new AtomicBoolean(true);
-    private final Object outputLock=new Object();private volatile boolean focusPaused;private long outputEpoch;
+    private final Object outputLock=new Object();private volatile boolean focusPaused,focusDucked;private long outputEpoch;
+    private float requestedVolume=1f;
     private volatile long focusDrops;
     private final AtomicReference<SSLSocket> socket=new AtomicReference<>();private volatile AudioTrack track;
     private volatile long latestSequence=-1,lastAudio,commandSequence;
@@ -68,7 +69,8 @@ final class LanReceiver implements AutoCloseable {
         }
     }
     void revokePending(){controls.clear();}
-    void volume(float value){AudioTrack t=track;if(t!=null)t.setVolume(value);}
+    void volume(float value){synchronized(outputLock){requestedVolume=Float.isFinite(value)?Math.max(0f,Math.min(1f,value)):0f;applyVolume();}}
+    private void applyVolume(){AudioTrack t=track;if(t!=null)t.setVolume(requestedVolume*(focusDucked?0.2f:1f));}
     private void stage(LanConnection.Stage value){if(focusPaused&&(value==LanConnection.Stage.OUTPUT||value==LanConnection.Stage.BUFFERING||value==LanConnection.Stage.SILENCE||value==LanConnection.Stage.STREAMING))value=LanConnection.Stage.PHONE_AUDIO;stage=value;DiagnosticStore.LOG.event(DiagnosticLog.Event.STAGE,value.name());listener.stage(value);}
     private void fail(LanConnection.Error code,LanConnection.Stage at){if(active.get()&&failureReported.compareAndSet(false,true)){DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,code.name(),at.ordinal());listener.failed(code,at);}}
     void policy(byte[] body)throws IOException {
@@ -157,6 +159,7 @@ final class LanReceiver implements AutoCloseable {
                 .setAudioFormat(new AudioFormat.Builder().setSampleRate(format.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                 .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum,format.bytes()*4)).build();
             if(track.getState()!=AudioTrack.STATE_INITIALIZED)throw new LanFailure.Coded(LanConnection.Error.PCM_OUTPUT);
+            synchronized(outputLock){applyVolume();}
             byte[] first=null;long deadline=SystemClock.elapsedRealtime()+2000;
             while(active.get()){
                 if(SystemClock.elapsedRealtime()>deadline)throw new LanFailure.Coded(LanConnection.Error.AUDIO_STALLED);
@@ -252,15 +255,18 @@ final class LanReceiver implements AutoCloseable {
     private int lastRoute=-2;private long lastDiagnostic=-10000;private boolean focusLost;
     void focus(int change){
         if(!active.get())return;
-        boolean lost=change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;
+        if(change!=AudioManager.AUDIOFOCUS_GAIN&&change!=AudioManager.AUDIOFOCUS_LOSS&&change!=AudioManager.AUDIOFOCUS_LOSS_TRANSIENT&&change!=AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)return;
+        boolean lost=change==AudioManager.AUDIOFOCUS_LOSS||change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT;
         synchronized(outputLock){
+            if(change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK&&focusPaused)return;
+            focusDucked=change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;applyVolume();
             focusLost=lost;
             if(focusPaused!=lost){focusPaused=lost;outputEpoch++;audio.clear();controls.clear();
                 AudioTrack t=track;if(t!=null&&lost){t.pause();t.flush();}
             }
             if(lost)outputState=0;
         }
-        DiagnosticStore.LOG.event(DiagnosticLog.Event.FOCUS,lost?"PHONE_AUDIO_PAUSED":"PC_AUDIO_RESUMED",change);
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.FOCUS,lost?"PHONE_AUDIO_PAUSED":focusDucked?"PC_AUDIO_DUCKED":"PC_AUDIO_RESUMED",change);
         if(lost)stage(LanConnection.Stage.PHONE_AUDIO);
     }
     String diagnostic(int volume){
@@ -275,7 +281,7 @@ final class LanReceiver implements AutoCloseable {
     void dump(PrintWriter out){
         LanProtocol.Format f=format;
         out.println("audioFresh="+fresh()+" playbackAlive="+playbackAlive()+" receivedFrames="+receivedFrames+" playedFrames="+playedFrames+" queueDrops="+queueDrops.get()+" lateDrops="+lateDrops.get());
-        out.println("focusPaused="+focusPaused+" focusDroppedFrames="+focusDrops);
+        out.println("focusPaused="+focusPaused+" focusDucked="+focusDucked+" focusDroppedFrames="+focusDrops);
         out.println("lateReadDrops="+lateReadDrops.get()+" latePlaybackDrops="+latePlaybackDrops.get()+" lastReadExcessMs="+lastReadExcessMs+" clockCorrectionMs="+(timeline==null?0:timeline.clockCorrection())+" playbackResyncs="+playbackResyncs);
         out.println("lastSequence="+latestSequence+" audioAgeMs="+(latestSequence<0?-1:SystemClock.elapsedRealtime()-lastAudio)+" sentCommands="+commandSequence);
         AudioTrack t=track;int underruns=-1;

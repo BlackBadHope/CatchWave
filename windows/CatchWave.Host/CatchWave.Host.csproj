@@ -5,7 +5,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>CatchWave.ico</ApplicationIcon>
-    <Version>0.1.44</Version><InformationalVersion>0.1.44-public-test-candidate</InformationalVersion>
+    <Version>0.1.45</Version><InformationalVersion>0.1.45-usb-auto-duck</InformationalVersion>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>

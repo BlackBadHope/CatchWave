@@ -128,6 +128,8 @@ public final class LanAudioService extends Service implements SensorEventListene
         UsbAccessory accessory=Build.VERSION.SDK_INT>=33?intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY,UsbAccessory.class):intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
         UsbManager usbManager=getSystemService(UsbManager.class);
         if(!UsbAudioProxy.matches(accessory)||!usbManager.hasPermission(accessory)){state.fail(settings,LanConnection.Error.USB_SETUP,state.stage);stopSelf();return;}
+        // Duplicate activity/permission delivery must not tear down an opening or live cable stream.
+        if(usb!=null&&usb.present()&&"USB".equals(state.transport))return;
         clearTransport();settings=new LanSettings(this);state.reset(settings);state.started=true;state.transition(LanConnection.Stage.STARTING);route=state.transport="USB";
         startForeground(NOTICE,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK|ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);holdPlaybackPower();refreshSensors();
         if(!detachRegistered){registerReceiver(detach,new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED),Context.RECEIVER_NOT_EXPORTED);detachRegistered=true;}

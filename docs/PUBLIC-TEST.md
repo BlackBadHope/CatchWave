@@ -1,4 +1,4 @@
-# Public test candidate 0.1.44
+# Public test candidate 0.1.45
 
 This checkpoint is an **experimental candidate**, not a stable release or AudioRelay parity claim. Android is the only client; Windows x64 is the only accepted Host architecture. APK and Host must come from the matching candidate package. Exact revision, hashes and verification results belong to the release build manifest.
 
@@ -13,15 +13,15 @@ This checkpoint is an **experimental candidate**, not a stable release or AudioR
 
 | Gate | Current evidence / required acceptance |
 | --- | --- |
-| Android build/lint | 0.1.44 built; 373 unit tests passed; lint 0 errors, 20 warnings |
-| Windows and Java interoperability | Final published Host: 122 checks passed; Java/.NET TLS and signed-command interoperability passed; exact revision/hashes are in the build manifest |
+| Android build/lint | 0.1.45: 383 tests passed, lint 0 errors / 20 warnings; exact APK hash is recorded in its build manifest |
+| Windows and Java interoperability | Exact final 0.1.45 revision/hashes/checks belong to its build manifest; prior 0.1.44 checks remain scoped to that artifact |
 | Installed Host / shortcut | 0.1.44 installed; all copied file hashes matched; launch through the actual desktop shortcut opened the window and bound port 49372 |
 | Installed APK | 0.1.44/code68 installed on the pilot; signer preserved and APK hash matched the prepared artifact |
 | Wi-Fi sound | Previously heard; repeat on the final APK/Host with actual PC media |
-| Cable sound | 0.1.43 physically heard; repeat on 0.1.44 and verify the USB role with diagnostic ADB excluded from the cable |
+| Cable sound | Owner confirmed USB working in 0.1.44; final 0.1.45 auto-pick still needs a real cable reattachment |
 | USB to Wi-Fi | Old candidate worked intermittently; new recovery/cancellation tests passed; three physical unplug cycles remain required |
 | Explicit disconnect | Earlier phone acceptance and current retry cancellation test exist; check stopped service and no automatic restart on final build |
-| Phone-media priority | Focus state and automatic-return tests exist; hear PC -> YouTube audio -> quiet -> PC return on final build |
+| Phone-media priority | Owner confirmed phone playback pauses PC and returns automatically in 0.1.44; repeat after 0.1.45 update |
 | Gestures | Previous user accepted volume/3/4/5/6 taps and tones; final signed-command build needs current physical acceptance |
 | Fresh ordinary USB setup | **BLOCKED / unaccepted:** generic UsbDk control fallback failed; pilot used an already working WinUSB control interface |
 | CatchWave Output | **BLOCKED:** unsigned SYS/INF/catalog built and validated; Microsoft account/certificate, kernel start/playback, installer/uninstaller and Host endpoint integration remain |
@@ -43,3 +43,9 @@ The candidate may be shared for an explicitly limited pilot; it must not be desc
 No audio/raw sensor/QR/credential logging or automatic uploads. Recognition is a separate opt-in microphone workflow with third-party HTTPS services. Share only bounded Diagnostics exports. PC permission approval compares the phone's public control-key fingerprint; private keys are never exported.
 
 The pilot preserves the installed signer and first-install date. A local rollback APK restores the exact 0.1.43 DEX payload with an increased manifest versionCode, permitting an in-place update without deleting data. It is a local recovery artifact, not a new public source release. After using that rollback, a future update needs a higher versionCode.
+
+## 0.1.45 notification and USB actions
+
+Standard notification MAY_DUCK focus uses Android automatic attenuation rather than pausing PCM. An explicit duck callback uses 20% of the app track gain, preserving queued audio and owner mute/volume; full phone-media focus loss still pauses/discards PC frames and returns after quiet. A new connection does not seize initial focus from already playing phone media. No notification-listener access is required by this change.
+
+Host auto-pick is limited to a previously authenticated physical route/device configuration. New drivers and unknown/multiple phones keep explicit setup. The phone can continue an active audio session automatically on accessory entry; a cold or explicitly disconnected session requires one private USB action. These new scenarios require hearing and cable acceptance, not just unit-test counters.

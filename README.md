@@ -2,7 +2,7 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current candidate source: **Android 0.1.44-public-test-candidate, versionCode 68; Windows Host 0.1.44-public-test-candidate**. Both use one dark green visual system. PC audio/gestures and nearby-music recognition are separate modes. QR confirmation starts audio without another Connect tap. Activation uses only a button. Native USB audio was heard on the OnePlus 12 in 0.1.43; the 0.1.44 handover changes need fresh physical acceptance. See [public test gates](docs/PUBLIC-TEST.md).
+Current candidate source: **Android 0.1.45-usb-auto-duck, versionCode 70; Windows Host 0.1.45-usb-auto-duck**. Both use one dark green visual system. PC audio/gestures and nearby-music recognition are separate modes. QR confirmation starts audio without another Connect tap. Activation uses only a button. The owner confirmed USB sound and phone-media pause/return in 0.1.44. Version 0.1.45 adds known-device USB auto-pick and notification ducking; these new paths need physical acceptance. See [public test gates](docs/PUBLIC-TEST.md).
 
 This release includes asynchronous TLS disconnect/cancellation, protection against a late refresh restarting a stopped session, background audio/power handling, bounded clock correction and continuity across small frame gaps. A delayed first orientation sample now starts a fresh neutral-calibration window. Permission, freshness, posture and accidental-input guards remain enabled. Previous physical checks confirmed audible audio and commands on one phone; automated tests and short listening checks do not establish long-term wireless reliability, battery life or AudioRelay parity.
 
