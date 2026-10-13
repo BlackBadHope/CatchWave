@@ -42,9 +42,10 @@ internal static class SelfTest {
             await using var frame=new MemoryStream();await Protocol.Write(frame,2,Protocol.Audio(7,140,new byte[3840]),CancellationToken.None);frame.Position=0;Packet decoded=await Protocol.Read(frame,CancellationToken.None);
             Check(decoded.Kind==2&&decoded.Body.Length==3856&&BinaryPrimitives.ReadInt64BigEndian(decoded.Body)==7,"wire frame");
             await using var bad=new MemoryStream(new byte[]{2,0,1,0,0});try{await Protocol.Read(bad,CancellationToken.None);throw new Exception("oversize allowed");}catch(IOException){checks++;}
-            using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));using var identity=new HostIdentity(new HostTrustedDevices());
+            using var identity=new HostIdentity(new HostTrustedDevices());
             checks+=await SecurityTest.Run();
             await FramePublication(identity,200,true);await FramePublication(identity,1000,false);
+            using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));
             await Session(identity,false,deadline.Token);await Session(identity,true,deadline.Token);
             var status=new HostStatus();status.Begin();status.Stage(HostStage.Authenticated);status.Frame(0,true);
             Check(!status.Snapshot.Effective(true),"sent PCM without phone output is not effective control");
