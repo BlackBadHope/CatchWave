@@ -14,7 +14,8 @@ This checkpoint is an **experimental candidate**, not a stable release or AudioR
 | Gate | Current evidence / required acceptance |
 | --- | --- |
 | Android build/lint | 0.1.44 built; 373 unit tests passed; lint 0 errors, 20 warnings |
-| Windows and Java interoperability | Run the final revision's Host self-test and Java/.NET signed-command check; record results in the build manifest |
+| Windows and Java interoperability | Final published Host: 122 checks passed; Java/.NET TLS and signed-command interoperability passed; exact revision/hashes are in the build manifest |
+| Installed Host / shortcut | 0.1.44 installed; all copied file hashes matched; launch through the actual desktop shortcut opened the window and bound port 49372 |
 | Installed APK | 0.1.44/code68 installed on the pilot; signer preserved and APK hash matched the prepared artifact |
 | Wi-Fi sound | Previously heard; repeat on the final APK/Host with actual PC media |
 | Cable sound | 0.1.43 physically heard; repeat on 0.1.44 and verify the USB role with diagnostic ADB excluded from the cable |
