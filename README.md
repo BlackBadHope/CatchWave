@@ -2,7 +2,7 @@
 
 Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
 
-Current beta: **Android 0.1.45-usb-auto-duck, versionCode 70; Windows Host 0.1.46-audio-output-beta**. Host now offers a saved existing-output selector, with explicit unavailable-device handling. See the [Russian tester quick start](docs/BETA-START-RU.md). Both use one dark green visual system. PC audio/gestures and nearby-music recognition are separate modes. QR confirmation starts audio without another Connect tap. Activation uses only a button. The owner confirmed USB sound and phone-media pause/return in 0.1.44. Version 0.1.45 adds known-device USB auto-pick and notification ducking; these new paths need physical acceptance. See [public test gates](docs/PUBLIC-TEST.md).
+Current beta: **Android 0.1.47-beta, versionCode 72; Windows Host 0.1.47-auto-audio-format-beta**. [Download the matching beta](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta) and follow the [Russian tester quick start](docs/BETA-START-RU.md). Host saves the chosen existing Windows output and lets you change it during playback. Windows automatically converts its shared audio format to PCM16 stereo 48 kHz; the pilot heard a 192 kHz Realtek output on Android. Both apps use one dark green visual system. QR confirmation starts audio without another Connect tap; gesture activation uses only a button. Android uses a dedicated release signer with a verified update lineage from the previous pilot signer. Native USB has worked on the configured pilot; clean-device USB setup, notification attenuation and broader quality remain experimental. See [public test gates](docs/PUBLIC-TEST.md) and [signing policy](docs/ANDROID-SIGNING.md).
 
 This release includes asynchronous TLS disconnect/cancellation, protection against a late refresh restarting a stopped session, background audio/power handling, bounded clock correction and continuity across small frame gaps. A delayed first orientation sample now starts a fresh neutral-calibration window. Permission, freshness, posture and accidental-input guards remain enabled. Previous physical checks confirmed audible audio and commands on one phone; automated tests and short listening checks do not establish long-term wireless reliability, battery life or AudioRelay parity.
 
@@ -74,7 +74,7 @@ Android requires JDK 17, SDK Platform 36 and Build Tools 36.0.0. Minimum Android
 .\build.ps1 -Validate
 ```
 
-Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release.apk`. The experimental APK uses the developer's local Android debug signing key; keys are never committed. Different signers prevent in-place updates. Building with another key cannot update the distributed APK in place. Older Releases contain older versions.
+Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release-unsigned.apk`. Release builds deliberately have no debug-key fallback. Distribution APKs are signed separately using `tools/Sign-Release.ps1` and a protected private profile; see [signing policy](docs/ANDROID-SIGNING.md). An independent build signed with another key cannot update the distributed app in place. Keys and passwords are never committed. Older Releases contain older versions.
 
 Windows needs Windows 10/11 and .NET 9 SDK/Windows Desktop runtime:
 

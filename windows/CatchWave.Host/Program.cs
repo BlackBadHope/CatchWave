@@ -162,7 +162,7 @@ internal static class Program {
         Console.CancelKeyPress+=(s,e)=>{e.Cancel=true;stop.Cancel();};
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         var preferences=HostControlSettings.Local();
-        using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);var audio=new HostAudioSource(HostAudioSettings.Local());using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
+        using var diagnostics=DiagnosticLog.Local();var state=new HostStatus(diagnostics);var audio=new HostAudioSource(HostAudioSettings.Local(),liveSwitch:true);using var window=new HostWindow(identity,address,port,synthetic,!mediaLockedOff&&(media||preferences.Load()),stop,preferences.Save,mediaLockedOff,state);
         if(!synthetic)window.ConfigureAudio(audio,AudioOutputs.Read);
         var server=new HostListener(stop.Token,async(peer,token)=>{
             try{await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute,audio:audio).Run(peer,token);}

@@ -36,7 +36,7 @@ internal sealed class HostAudioSettings(string path)
     }
 }
 
-/** A source lease freezes selection across opening/capture/closing, shared by LAN and USB. */
+/** LAN and USB share a saved source choice. Normalized live sources switch on the capture thread. */
 internal sealed class HostAudioSource
 {
     private readonly object gate = new();
@@ -44,12 +44,14 @@ internal sealed class HostAudioSource
     private readonly Func<string?, DiagnosticLog?, IPcmSource> factory;
     private AudioChoice selected;
     private int leases;
+    private long revision;
+    internal bool LiveSwitch { get; }
     private string state = "", availability = "";
     private bool saveFailed;
-    internal HostAudioSource(HostAudioSettings? settings = null, Func<string?, DiagnosticLog?, IPcmSource>? factory = null)
+    internal HostAudioSource(HostAudioSettings? settings = null, Func<string?, DiagnosticLog?, IPcmSource>? factory = null, bool liveSwitch = false)
     {
         this.settings = settings; this.factory = factory ?? ((id, log) => new WasapiSource(log, id));
-        selected = settings?.Load() ?? AudioChoice.Default;
+        selected = settings?.Load() ?? AudioChoice.Default; LiveSwitch = liveSwitch;
     }
     internal AudioChoice Selected { get { lock (gate) return selected; } }
     internal bool Busy { get { lock (gate) return leases > 0; } }
@@ -60,9 +62,9 @@ internal sealed class HostAudioSource
             lock (gate)
             {
                 if (saveFailed) return "Выбор не сохранён; действует до закрытия Host.";
-                if (state == "SOURCE_FORMAT_UNSUPPORTED") return "Нужен формат Windows: моно/стерео, 44,1 / 48 / 96 кГц.";
+                if (state == "SOURCE_FORMAT_UNSUPPORTED") return "Windows не смогла подготовить звук этого выхода. Выберите другой.";
                 if (state == "SOURCE_UNAVAILABLE" || availability != "") return "Источник недоступен" + (availability == "" ? "." : ": " + availability + ".") + " Выберите другой выход.";
-                return leases > 0 ? "Для смены источника отключите телефон." : "Направьте звук Windows на этот же выход.";
+                return LiveSwitch ? "Источник можно менять без переподключения телефона." : leases > 0 ? "Для смены источника отключите телефон." : "Направьте звук Windows на этот же выход.";
             }
         }
     }
@@ -78,34 +80,55 @@ internal sealed class HostAudioSource
     {
         lock (gate)
         {
-            if (leases > 0 || output != null && !output.Active) return false;
+            if (!LiveSwitch && leases > 0 || output != null && !output.Active) return false;
             var next = output == null ? AudioChoice.Default : new AudioChoice(output.Id, output.Name);
             if (!next.Valid) return false;
-            selected = next; state = availability = ""; saveFailed = settings != null && !settings.Save(next); return true;
+            selected = next; revision++; state = availability = ""; saveFailed = settings != null && !settings.Save(next); return true;
         }
     }
     internal IPcmSource Open(DiagnosticLog? log)
     {
-        AudioChoice choice;
-        lock (gate) { leases++; choice = selected; state = ""; }
-        try { var source=factory(choice.Id, log);lock(gate)availability="";return new Lease(this, source, log); }
+        AudioChoice choice; long openingRevision;
+        lock (gate) { leases++; choice = selected; openingRevision = revision; state = ""; }
+        try { var source=factory(choice.Id, log);lock(gate)availability="";return new Lease(this, source, log, openingRevision); }
         catch (Exception error) { Failed(error, log); Release(); throw; }
     }
     private void Failed(Exception error, DiagnosticLog? log)
     {
-        string code = error is NotSupportedException ? "SOURCE_FORMAT_UNSUPPORTED" : "SOURCE_UNAVAILABLE";
+        string code = error is NotSupportedException || error is COMException && error.HResult == unchecked((int)0x88890008) ? "SOURCE_FORMAT_UNSUPPORTED" : "SOURCE_UNAVAILABLE";
         lock (gate) state = code; log?.Event("ROUTE", code);
     }
     private void Release() { lock (gate) leases--; }
-    private sealed class Lease(HostAudioSource owner, IPcmSource source, DiagnosticLog? log) : IPcmSource
+    private sealed class Lease(HostAudioSource owner, IPcmSource source, DiagnosticLog? log, long openingRevision) : IPcmSource
     {
         private int disposed;
-        public PcmFormat Format => source.Format;
+        private IPcmSource? current = source;
+        private long observedRevision = openingRevision;
+        public PcmFormat Format { get; } = source.Format;
         public byte[] Frame()
         {
-            try { return source.Frame(); }
-            catch (Exception error) when (error is COMException or IOException or NotSupportedException) { owner.Failed(error, log); throw; }
+            lock (owner.gate)
+            {
+                ObjectDisposedException.ThrowIf(disposed != 0, this);
+                try
+                {
+                    if (owner.LiveSwitch && observedRevision != owner.revision)
+                    {
+                        current?.Dispose(); current = null;
+                        var next = owner.factory(owner.selected.Id, log);
+                        if (next.Format != Format) { next.Dispose(); throw new NotSupportedException("Live source format must stay normalized."); }
+                        current = next; observedRevision = owner.revision; owner.state = owner.availability = "";
+                        log?.Event("ROUTE", "LIVE_SOURCE_CHANGED");
+                    }
+                    return current?.Frame() ?? throw new IOException("Selected source is unavailable.");
+                }
+                catch (Exception error) when (error is COMException or IOException or NotSupportedException) { owner.Failed(error, log); throw; }
+            }
         }
-        public void Dispose() { if (Interlocked.Exchange(ref disposed, 1) == 0) try { source.Dispose(); } finally { owner.Release(); } }
+        public void Dispose()
+        {
+            lock (owner.gate) if (Interlocked.Exchange(ref disposed, 1) == 0)
+                try { current?.Dispose(); current = null; } finally { owner.Release(); }
+        }
     }
 }

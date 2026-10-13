@@ -48,24 +48,56 @@ internal static class AudioSourceTest
             using (pending.GetAwaiter().GetResult()) { }
             Check(!opening.Busy && opening.Select(output), "completed lease releases source selection");
             Check(Marshal.SizeOf<AudioPropVariant>() == (IntPtr.Size == 8 ? 24 : 16), "native PROPVARIANT layout");
+            int closed=0;
+            var live=new HostAudioSource(factory:(id,_)=>new LiveMarker(id==null?(byte)11:(byte)22,()=>closed++),liveSwitch:true);
+            using(var capture=live.Open(log)){
+                Check(capture.Frame()[0]==11&&live.Select(output),"live choice accepted during capture");
+                Check(capture.Frame()[0]==22&&capture.Format==new PcmFormat(48000,2)&&closed==1,"source changes in existing stream and closes old capture");
+                Check(live.Select(null)&&capture.Frame()[0]==11&&closed==2,"default route restores without renegotiation");
+            }
+            Check(closed==3&&!live.Busy,"live capture is disposed exactly once");
+            var mismatch=new HostAudioSource(factory:(id,_)=>id==null?new LiveMarker(11,()=>closed++):new MarkerSource(),liveSwitch:true);
+            using(var capture=mismatch.Open(log)){
+                mismatch.Select(output);
+                try{capture.Frame();throw new Exception("Live format mismatch accepted");}catch(NotSupportedException){}
+                Check(mismatch.Hint.Contains("Выберите другой"),"live format failure is explicit without old-device fallback");
+            }
+            Check(!mismatch.Busy,"failed live switch releases lease");
+            Check(!log.Text().Contains(output.Id)&&!log.Text().Contains(output.Name),"live journal excludes endpoint identity");
+            var ring=new PcmFrameBuffer(23);var expected=new List<byte>();var random=new Random(47);long dropped=0;
+            for(int i=0;i<200;i++){
+                byte[] input=new byte[random.Next(0,35)];random.NextBytes(input);expected.AddRange(input);
+                if(expected.Count>23){int obsolete=expected.Count-23;expected.RemoveRange(0,obsolete);dropped+=obsolete;}
+                ring.Write(input);byte[] read=new byte[random.Next(0,30)];int take=Math.Min(read.Length,expected.Count);
+                Check(ring.Read(read)==take&&read.AsSpan(0,take).SequenceEqual(expected.Take(take).ToArray())&&read.AsSpan(take).IndexOfAnyExcept((byte)0)<0,"bounded FIFO wrap/overflow/zero fill");
+                expected.RemoveRange(0,take);
+            }
+            Check(ring.DroppedBytes==dropped,"source overflow is counted");ring.Clear();Check(ring.Count==0,"discontinuity discards old source PCM");
             Check(Session(output).GetAwaiter().GetResult(), "selected mono 44.1 kHz PCM reaches authenticated stream");
+            Check(Session(output,true).GetAwaiter().GetResult(), "source changes inside one authenticated TLS stream without format renegotiation");
         }
         finally { File.Delete(path); File.Delete(path + ".tmp"); }
         return checks;
     }
 
+    private sealed class LiveMarker(byte marker,Action close) : IPcmSource
+    {
+        public PcmFormat Format=>new(48000,2);
+        public byte[] Frame(){var data=new byte[Format.Bytes];data[0]=marker;return data;}
+        public void Dispose()=>close();
+    }
     private sealed class MarkerSource : IPcmSource
     {
         public PcmFormat Format => new(44100, 1);
         public byte[] Frame() { var data = new byte[Format.Bytes]; data[0] = 27; return data; }
         public void Dispose() { }
     }
-    private static async Task<bool> Session(AudioOutput output)
+    private static async Task<bool> Session(AudioOutput output,bool live=false)
     {
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5)); var token = stop.Token;
         using var identity = new HostIdentity(new HostTrustedDevices()); using var signer = new SignedPeer();
         string? opened = null;
-        var selection = new HostAudioSource(factory: (id, _) => { opened = id; return new MarkerSource(); }); selection.Select(output);
+        var selection = new HostAudioSource(factory: (id, _) => { opened = id; return live ? new LiveMarker(id==null?(byte)11:(byte)22,()=>{}) : new MarkerSource(); },liveSwitch:live); if(!live)selection.Select(output);
         var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(1);
         Task server = Task.Run(async () =>
         {
@@ -80,7 +112,13 @@ internal static class AudioSourceTest
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "CatchWave", EnabledSslProtocols = SslProtocols.Tls12 }, token);
             await Protocol.Write(tls, 0, signer.Auth(identity.Token), token);
             var format = await Protocol.Read(tls, token); await Protocol.Read(tls, token); var frame = await Protocol.Read(tls, token);
-            bool correct = opened == output.Id && format.Kind == 1 && BinaryPrimitives.ReadInt32BigEndian(format.Body.AsSpan(16)) == 44100 && format.Body[20] == 1 && frame.Kind == 2 && frame.Body.Length == 1780 && frame.Body[16] == 27;
+            bool correct = format.Kind == 1 && BinaryPrimitives.ReadInt32BigEndian(format.Body.AsSpan(16)) == (live?48000:44100) && format.Body[20] == (live?2:1) && frame.Kind == 2 && frame.Body.Length == (live?3856:1780) && frame.Body[16] == (live?11:27);
+            if(live){
+                correct &= selection.Select(output);bool changed=false;
+                for(int i=0;i<10&&!changed;i++){var next=await Protocol.Read(tls,token);correct&=next.Kind!=1;if(next.Kind==2)changed=next.Body[16]==22;}
+                correct &= changed;
+            }
+            correct &= opened==output.Id;
             client.Close(); await server.WaitAsync(token); return correct && !selection.Busy;
         }
         finally { stop.Cancel(); listener.Stop(); try { await server.WaitAsync(TimeSpan.FromSeconds(1)); } catch (OperationCanceledException) { } }

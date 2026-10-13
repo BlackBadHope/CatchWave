@@ -10,6 +10,7 @@ internal static class HostUiTest {
         var label=(Label)typeof(HostWindow).GetField("controlStatus",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         var hint=(Label)typeof(HostWindow).GetField("controlHint",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         void Check(bool value){if(!value)throw new Exception("UI state assertion failed");checks++;}
+        Check(HostWindow.WaitingHint(HostStage.Listening,14999)==""&&HostWindow.WaitingHint(HostStage.Listening,15000).Contains("брандмауэр")&&HostWindow.WaitingHint(HostStage.AudioSent,30000)=="");
         Check(!action.Enabled&&action.Text=="Разрешить управление на ПК"&&label.Text!="Жесты готовы");
         status.Begin();status.Stage(HostStage.Tls);form.Render();Check(!action.Enabled&&label.Text!="Жесты готовы");
         status.Frame(0,true);form.Render();Check(!action.Enabled); // Sent silence alone does not confirm phone output.
@@ -51,6 +52,8 @@ internal static class HostUiTest {
         }
         using(selected.Open(null)){form.Render();Check(!audioButton.Enabled);}
         form.Render();Check(audioButton.Enabled);form.AssertLayout();
+        var live=new HostAudioSource(factory:(_,_)=>new SilenceSource(),liveSwitch:true);form.ConfigureAudio(live,()=>new[]{headphones});
+        using(live.Open(null)){form.Render();Check(audioButton.Enabled);}
         form.Close();
     }catch(Exception e){failure=e;}});thread.SetApartmentState(ApartmentState.STA);thread.Start();if(!thread.Join(TimeSpan.FromSeconds(5)))throw new Exception("UI test timed out");if(failure!=null)throw failure;return checks;}
 }

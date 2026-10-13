@@ -1,4 +1,4 @@
-# Public beta: Host 0.1.46 / Android 0.1.45
+# Public beta: Host and Android 0.1.47
 
 This checkpoint is an **experimental candidate**, not a stable release or AudioRelay parity claim. Android is the only client; Windows x64 is the only accepted Host architecture. APK and Host must come from the matching candidate package. Exact revision, hashes and verification results belong to the release build manifest.
 
@@ -6,7 +6,7 @@ For sharing with friends, use the [Russian quick start](BETA-START-RU.md). The s
 
 ## Current scope
 
-- Saved selection of an existing Windows output, shared by Wi-Fi/USB; no silent replacement of unavailable devices. Select before connecting and route the desired Windows player to that same output.
+- Saved selection of an existing Windows output, shared by Wi-Fi/USB; no silent replacement of unavailable devices. Route the desired Windows player to that same output. Sources can change during the existing connection. Windows automatically converts their shared mix format to PCM16 stereo 48 kHz.
 - Wi-Fi PC audio with local pinned pairing, one confirmation after QR scanning, explicit disconnect, bounded recovery and phone-media priority.
 - Button-only gesture activation, independent permission switches, held Android volume, play/pause/next/previous and local mute.
 - Native AOA/WinUSB cable audio: heard on the OnePlus 12 in 0.1.43, without ADB carrying audio or USB tethering. Android 0.1.44 fixes single-attempt handover, learns Wi-Fi pairing after successful USB output and preserves a selected VPN.
@@ -16,11 +16,12 @@ For sharing with friends, use the [Russian quick start](BETA-START-RU.md). The s
 
 | Gate | Current evidence / required acceptance |
 | --- | --- |
-| Android build/lint | 0.1.45: 383 tests passed, lint 0 errors / 20 warnings; exact APK hash is recorded in its build manifest |
-| Windows and Java interoperability | Host 0.1.46 exact revision/hashes/checks belong to the beta manifest; Android 0.1.45 remains byte-identical to its prior verified release |
+| Android build/lint | 0.1.47: 383 tests passed, lint 0 errors / 20 warnings; release signature/API30 verification passed; exact APK hash is in the manifest |
+| Windows and Java interoperability | Final Host revision/hashes/checks and synthetic interoperability results belong to the beta manifest; these do not prove hearing |
 | Installed Host / shortcut | Latest installation and desktop launch results are recorded in the beta build manifest; previous 0.1.45 installed checks remain scoped to that artifact |
-| Installed APK | 0.1.45/code70 installed on the pilot; unchanged APK/signer are reused in this Host-only beta |
-| Wi-Fi sound | Previously heard; repeat on the final APK/Host with actual PC media |
+| Installed APK | 0.1.47/code72 installed over 0.1.45/code70 using the release lineage; UID/first-install date preserved; pulled APK hash matched |
+| Selected output sound | Owner heard the initially deployed Host47 with the former APK45 on its selected Realtek 192 kHz output; final pair observation belongs to the manifest |
+| Live source switch | Tested inside one authenticated synthetic TLS connection without format renegotiation; physical device switch remains a separate hearing check |
 | Cable sound | Owner confirmed USB working in 0.1.44; final 0.1.45 auto-pick still needs a real cable reattachment |
 | USB to Wi-Fi | Old candidate worked intermittently; new recovery/cancellation tests passed; three physical unplug cycles remain required |
 | Explicit disconnect | Earlier phone acceptance and current retry cancellation test exist; check stopped service and no automatic restart on final build |
@@ -45,7 +46,7 @@ The candidate may be shared for an explicitly limited pilot; it must not be desc
 
 No audio/raw sensor/QR/credential logging or automatic uploads. Recognition is a separate opt-in microphone workflow with third-party HTTPS services. Share only bounded Diagnostics exports. PC permission approval compares the phone's public control-key fingerprint; private keys are never exported.
 
-The pilot preserves the installed signer and first-install date. A local rollback APK restores the exact 0.1.43 DEX payload with an increased manifest versionCode, permitting an in-place update without deleting data. It is a local recovery artifact, not a new public source release. After using that rollback, a future update needs a higher versionCode.
+The pilot update preserves app data/UID and first-install date through verified signer lineage. A local rollback APK restores the exact 0.1.45 DEX payload under the new release key with versionCode73. It is a local recovery artifact, not a new public source release. After using that rollback, a future update needs a higher versionCode. See [signing policy](ANDROID-SIGNING.md).
 
 ## 0.1.45 notification and USB actions
 

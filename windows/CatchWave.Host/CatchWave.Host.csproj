@@ -5,7 +5,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>CatchWave.ico</ApplicationIcon>
-    <Version>0.1.46</Version><InformationalVersion>0.1.46-audio-output-beta</InformationalVersion>
+    <Version>0.1.47</Version><InformationalVersion>0.1.47-auto-audio-format-beta</InformationalVersion>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>

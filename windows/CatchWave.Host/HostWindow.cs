@@ -44,6 +44,7 @@ internal sealed class HostWindow:Form {
     private bool pairOpen=true,diagnosticOpen;
     private bool? wasLive;
     private readonly System.Windows.Forms.Timer timer=new(){Interval=500};
+    private readonly System.Diagnostics.Stopwatch waitingClock=System.Diagnostics.Stopwatch.StartNew();
     private readonly CancellationTokenRegistration cancellation;
     private readonly List<IDisposable> assets=[];
 
@@ -117,7 +118,7 @@ internal sealed class HostWindow:Form {
         var scan=Label(11);scan.Text="Сканируйте QR в CatchWave";scan.TextAlign=ContentAlignment.MiddleCenter;scan.Dock=DockStyle.Fill;
         using(var bytes=new MemoryStream(PairingQr.Png(pairCode,4)))using(var img=Image.FromStream(bytes)){picture.Image=new Bitmap(img);assets.Add(picture.Image);}
         picture.Dock=DockStyle.Fill;picture.SizeMode=PictureBoxSizeMode.CenterImage;picture.BackColor=Color.White;
-        privacy.Text="QR приватен. После перезапуска Host\nотсканируйте новый QR на телефоне.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
+        privacy.Text="QR открывает доступ к звуку. Не отправляйте фото.\nПосле перезапуска Host нужен новый QR.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
         pairLayout.Controls.Add(scan,0,0);pairLayout.Controls.Add(picture,0,1);pairLayout.Controls.Add(privacy,0,2);pairing.Controls.Add(pairLayout);
         content.Dock=DockStyle.Fill;content.Controls.Add(pairing);right.Controls.Add(content,0,1);
         phone.Dock=DockStyle.Fill;phone.MaximumSize=new Size(300,0);right.Controls.Add(phone,0,2);
@@ -195,7 +196,7 @@ internal sealed class HostWindow:Form {
     }
     internal void Render(){
         if(IsDisposed)return;HostSnapshot s=model.Snapshot;
-        if(audioSource!=null){audioOutput.Text=audioSource.Selected.Name;audioOutput.Enabled=!audioSource.Busy&&!audioLoading;audioHint.Text=audioSource.Hint;audioNote.Text="Звук: "+audioSource.Selected.Name;audioOutput.AccessibleName="Источник звука: "+audioSource.Selected.Name;}
+        if(audioSource!=null){audioOutput.Text=audioSource.Selected.Name;audioOutput.Enabled=(!audioSource.Busy||audioSource.LiveSwitch)&&!audioLoading;audioHint.Text=audioSource.Hint;audioNote.Text="Звук: "+audioSource.Selected.Name;audioOutput.AccessibleName="Источник звука: "+audioSource.Selected.Name;}
         connection.Text=s.Stage switch {
             HostStage.Listening=>"Подключите телефон",HostStage.Tcp or HostStage.Tls=>"Подключение…",HostStage.Auth=>"Проверка сопряжения…",
             HostStage.Authenticated or HostStage.Format=>"Запуск звука…",HostStage.SilenceSent=>"Тишина с ПК",HostStage.AudioSent=>"Звук отправляется",
@@ -204,7 +205,7 @@ internal sealed class HostWindow:Form {
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
         badge.Text=s.Live?"Подключено · "+transport:s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
         badge.ForeColor=s.Live?Accent:Muted;
-        reason.Text=s.Error==HostError.None?"":s.Error switch {
+        reason.Text=s.Error==HostError.None?WaitingHint(s.Stage,waitingClock.ElapsedMilliseconds):s.Error switch {
             HostError.AuthRejected=>"Сканируйте QR текущего Host.",HostError.TlsHandshake=>"Не удалось установить защищённое соединение.",
             HostError.CaptureFailed=>"Аудиовыход Windows недоступен. Откройте диагностику.",
             HostError.PeerClosed=>"Можно подключить телефон снова.",HostError.Protocol=>"Проверьте совместимость версий Host и Android.",_=>"Проверьте состояние на телефоне и откройте диагностику."
@@ -226,6 +227,8 @@ internal sealed class HostWindow:Form {
         RenderPanels();
     }
     internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
+    internal static string WaitingHint(HostStage stage,long elapsed)=>stage==HostStage.Listening&&elapsed>=15000
+        ?"Нет подключения? Проверьте общую Wi-Fi сеть, брандмауэр для частной сети и изоляцию клиентов роутера.":"";
     internal void UseStatus(HostStatus next,string route){
         if(IsDisposed||!IsHandleCreated)return;
         if(InvokeRequired){BeginInvoke(()=>UseStatus(next,route));return;}
@@ -276,9 +279,9 @@ internal sealed class HostWindow:Form {
         }
         Shown+=(_,_)=>Read();
         audioOutput.Click+=(_,_)=>{
-            if(source.Busy||audioLoading)return;audioLoading=true;audioOutput.Enabled=false;
+            if(source.Busy&&!source.LiveSwitch||audioLoading)return;audioLoading=true;audioOutput.Enabled=false;
             try{
-                var outputs=Read();if(outputs==null||IsDisposed||source.Busy)return;
+                var outputs=Read();if(outputs==null||IsDisposed||source.Busy&&!source.LiveSwitch)return;
                 foreach(ToolStripItem old in audioMenu.Items.Cast<ToolStripItem>().ToArray()){audioMenu.Items.Remove(old);old.Dispose();}
                 void Add(string caption,AudioOutput? next,bool enabled){
                     var item=new ToolStripMenuItem(caption){Enabled=enabled,Checked=source.Selected.Id==next?.Id};
