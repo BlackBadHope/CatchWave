@@ -1,0 +1,21 @@
+{
+  "wdk_sdk_version": "10.0.26100.6584",
+  "msvc_version": "14.44.35207",
+  "nuget_sha512_hex": {
+    "microsoft.windows.wdk.x64": "8E175D6819E1303AADDC656BDF64554ED691D0A1E66438D8D09093327D74390A64E3E01285708AF50034F6F05ACE9F278B5323BBCE2A3394865DF21F9F2389FA",
+    "microsoft.windows.sdk.cpp": "2AB1D73514F4B2BDC1AA6BD5062AF467F72BD48EBA32F999E984F005ACE2D13CFB3F7E7AB91082CA78E5DFFAD9C2C4B424B602743FFE7E54D2375D35ADC9A6FA",
+    "microsoft.windows.sdk.cpp.x64": "FB913010BC0EBEC4B3806AC70D0D2CB5D68EB5864719F27D72FC7D6CDE83F3C2B3394F892EC14BD5B10A1382BB53491DF7DAEF6BFBAFD4FE5A0EF41644283B39"
+  },
+  "build_tools_vsix": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/fa1259b6-3659-4a26-a8b4-c42d40b343ab/c53677dd5d56679c4298323fd12a1ec504cc05e9e346c0866b178955a9dcbf4b/payload.vsix",
+    "sha256": "C53677DD5D56679C4298323FD12A1EC504CC05E9E346C0866B178955A9DCBF4B",
+    "extract_folder": "build-tools-vsix"
+  },
+  "spectre_vsix": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/67cf767c-5e71-47c2-a54a-cd5631e28942/6d7cb93cc7fdc206f44999850b414600ae1041d0db7d2fe9d0ff658abfb97b58/Microsoft.VC.14.44.17.14.CRT.x64.Desktop.spectre.base.vsix",
+    "sha256": "6D7CB93CC7FDC206F44999850B414600AE1041D0DB7D2FE9D0FF658ABFB97B58",
+    "extract_folder": "spectre-x64"
+  },
+  "nuget_provenance": "SHA512 checked against packageHash in the official NuGet registration catalog entry",
+  "vsix_provenance": "SHA256 checked against the installed Microsoft Visual Studio 2022 channel catalog"
+}

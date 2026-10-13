@@ -16,7 +16,9 @@ internal sealed class UsbHost(HostIdentity identity,HostWindow window,HostStatus
                 using Stream pipe=await UsbAccessory.Open(selected,token,(code,values)=>state.Log.Event("USB",code,values));
                 using(var setup=CancellationTokenSource.CreateLinkedTokenSource(token)){
                     setup.CancelAfter(TimeSpan.FromSeconds(90));
+                    state.Log.Event("USB","USB_BOOTSTRAP_START");
                     await Bootstrap(pipe,identity.PairCode(address(),port),setup.Token);
+                    state.Log.Event("USB","USB_BOOTSTRAP_ACK");
                 }
                 window.UseStatus(state,"USB");
                 await new HostSession(identity,synthetic,false,status:state,permission:()=>window.Permission,authorizedSink:window.Execute).Run(pipe,token);

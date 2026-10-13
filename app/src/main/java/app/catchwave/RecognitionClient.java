@@ -117,6 +117,7 @@ public final class RecognitionClient {
     }
 
     public static Track parse(JSONObject response,long anchor) throws Exception {
+        BoundedJson.validate(response,()->{});
         JSONObject data=response.optJSONObject("track"); JSONArray matches=response.optJSONArray("matches");
         if(data==null||matches==null||matches.length()==0)return null;
         String key=requiredText(data,"key"), title=requiredText(data,"title"), artist=requiredText(data,"subtitle");
@@ -191,19 +192,21 @@ public final class RecognitionClient {
             ||response.opt("continuationContents") instanceof JSONObject||response.opt("onResponseReceivedCommands") instanceof JSONArray))
             throw new RequestException(Kind.BAD_RESPONSE,"Каталог вернул ответ без результатов поиска.");
         CatalogScan scan=new CatalogScan();
-        String found=parseYoutubeSearch(response,track,scan); check(scope,budget);
+        String found=parseYoutubeSearch(response,track,scan,()->check(scope,budget)); check(scope,budget);
         if(found.isEmpty()&&scan.songItems>0&&scan.readableItems==0)
             throw new RequestException(Kind.BAD_RESPONSE,"Не удалось прочитать записи в ответе каталога.");
         return found;
     }
 
     public static String parseYoutubeSearch(Object node,Track target) throws Exception {
-        return parseYoutubeSearch(node,target,new CatalogScan());
+        BoundedJson.validate(node,()->{});
+        return parseYoutubeSearch(node,target,new CatalogScan(),()->{});
     }
-    private static final class CatalogScan { int songItems,readableItems; }
-    private static String parseYoutubeSearch(Object node,Track target,CatalogScan scan) throws Exception {
+    private static final class CatalogScan { int songItems,readableItems,steps; }
+    private static String parseYoutubeSearch(Object node,Track target,CatalogScan scan,BoundedJson.Check check) throws Exception {
+        if((++scan.steps&127)==0)check.run();
         if(node instanceof JSONArray array)for(int i=0;i<array.length();i++) {
-            String found=parseYoutubeSearch(array.opt(i),target,scan); if(!found.isEmpty())return found;
+            String found=parseYoutubeSearch(array.opt(i),target,scan,check); if(!found.isEmpty())return found;
         }
         if(node instanceof JSONObject object) {
             JSONObject item=object.optJSONObject("musicResponsiveListItemRenderer");
@@ -212,31 +215,35 @@ public final class RecognitionClient {
                 if(item.has("playlistItemData"))scan.songItems++;
                 JSONArray columns=item.optJSONArray("flexColumns");
                 if(id.matches("[A-Za-z0-9_-]{11}")&&columns!=null&&columns.length()>=2) {
-                    String title=columnText(columns,0), artist=columnText(columns,1).split("[•·]",2)[0].trim();
+                    check.run();String title=columnText(columns,0,check), artist=columnText(columns,1,check).split("[•·]",2)[0].trim();
                     if(!title.isEmpty()&&!artist.isEmpty())scan.readableItems++;
                     if(!title.isEmpty()&&!artist.isEmpty()
                         &&!"MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT".equals(item.optString("musicItemRendererDisplayPolicy"))
                         &&target.matches(title,artist)) {
+                        check.run();
                         target.playbackTitle=title; target.playbackArtist=artist; return "https://music.youtube.com/watch?v="+id;
                     }
+                    check.run();
                 }
             }
             java.util.Iterator<String> keys=object.keys();
-            while(keys.hasNext()) { String found=parseYoutubeSearch(object.opt(keys.next()),target,scan); if(!found.isEmpty())return found; }
+            while(keys.hasNext()) { String found=parseYoutubeSearch(object.opt(keys.next()),target,scan,check); if(!found.isEmpty())return found; }
         }
         return "";
     }
 
-    private static String columnText(JSONArray columns,int index) {
+    private static String columnText(JSONArray columns,int index,BoundedJson.Check check)throws java.io.IOException {
         JSONObject column=columns.optJSONObject(index);
         JSONObject renderer=column==null?null:column.optJSONObject("musicResponsiveListItemFlexColumnRenderer");
         JSONObject text=renderer==null?null:renderer.optJSONObject("text");
         if(text==null)return "";
-        JSONArray runs=text.optJSONArray("runs"); if(runs==null)return requiredText(text,"simpleText");
+        JSONArray runs=text.optJSONArray("runs"); if(runs==null){String value=requiredText(text,"simpleText");if(value.length()>Track.MATCH_TEXT_LIMIT)throw new java.io.IOException("Catalog text bounds");return value;}
         StringBuilder out=new StringBuilder();
         for(int i=0;i<runs.length();i++) {
+            if((i&127)==0)check.run();
             JSONObject run=runs.optJSONObject(i); if(run==null)return "";
-            Object value=run.opt("text"); if(!(value instanceof String))return ""; out.append((String)value);
+            Object value=run.opt("text"); if(!(value instanceof String))return "";
+            if(((String)value).length()>Track.MATCH_TEXT_LIMIT-out.length())throw new java.io.IOException("Catalog text bounds");out.append((String)value);
         }
         return out.toString();
     }
@@ -271,7 +278,9 @@ public final class RecognitionClient {
 
     // Kept for the existing bounded diagnostic probes that reflect this method.
     private static JSONObject fetch(String url,JSONObject body) throws Exception {
-        return new JSONObject(fetchText(url,body));
+        RequestScope scope=new RequestScope();
+        long timeout="music.youtube.com".equals(new URL(url).getHost())?CATALOG_TIMEOUT_MS:RECOGNITION_TIMEOUT_MS;
+        try(CallBudget budget=new CallBudget(timeout)){return new RecognitionClient().fetchScoped(url,body,scope,budget);}
     }
     private static String fetchText(String url,JSONObject body) throws Exception {
         RequestScope scope=new RequestScope();
@@ -282,7 +291,7 @@ public final class RecognitionClient {
         }
     }
     private JSONObject fetchScoped(String url,JSONObject body,RequestScope scope,CallBudget budget) throws Exception {
-        JSONObject result=new JSONObject(fetchTextScoped(url,body,scope,budget)); check(scope,budget); return result;
+        return BoundedJson.parse(fetchTextScoped(url,body,scope,budget),()->check(scope,budget));
     }
     private String fetchTextScoped(String url,JSONObject body,RequestScope scope,CallBudget budget) throws Exception {
         check(scope,budget);

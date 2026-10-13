@@ -20,6 +20,7 @@ internal sealed class HostWindow:Form {
     internal HostPermission Permission=>Volatile.Read(ref permission);
     internal bool MediaEnabled=>Permission.Enabled;
     private readonly object policyGate=new();
+    private readonly HostTrustedDevices? trusted;
     private HostStatus model;
     private string transport="Wi-Fi";
     private string usbNotice="";
@@ -42,10 +43,11 @@ internal sealed class HostWindow:Form {
     private readonly List<IDisposable> assets=[];
 
     internal HostWindow(HostIdentity identity,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status)
-        :this(identity.PairCode(address,port),Convert.ToHexString(SHA256.HashData(identity.Certificate.RawData)),address,port,synthetic,enabled,stop,save,lockedOff,status){}
+        :this(identity.PairCode(address,port),Convert.ToHexString(SHA256.HashData(identity.Certificate.RawData)),address,port,synthetic,enabled,stop,save,lockedOff,status,identity.Trusted){}
 
     // Native rendering/test entry uses only an inert public fixture, never a live pairing identity.
-    internal HostWindow(string pairCode,string certificate,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status){
+    internal HostWindow(string pairCode,string certificate,string address,int port,bool synthetic,bool enabled,CancellationTokenSource stop,Func<bool,bool> save,bool lockedOff,HostStatus status,HostTrustedDevices? trusted=null){
+        this.trusted=trusted;
         model=status;locked=lockedOff;this.save=save;permission=new(enabled&&!lockedOff,0);
         endpoint=$"{address}:{port}";fingerprint=certificate;
         Text="CatchWave Host";ClientSize=new Size(1000,730);MinimumSize=SizeFromClientSize(new Size(980,730));
@@ -137,7 +139,13 @@ internal sealed class HostWindow:Form {
         footer.Controls.Add(note,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
 
         control.Click+=(_,_)=>{
-            if(MediaEnabled)SetMedia(false);
+            string? pending=trusted?.PendingFingerprint;
+            if(pending!=null&&!locked){
+                if(MessageBox.Show(this,"Сверьте отпечаток ключа управления в диагностике CatchWave на телефоне:\n\n"+pending+"\n\nРазрешить этому телефону команды на ПК? QR сам по себе разрешает только звук.","Разрешить телефон",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK){
+                    saving.Text=trusted!.Approve(pending)?"":"Телефон сменился или разрешение не сохранено. Повторите проверку.";if(saving.Text=="")SetMedia(true);Render();
+                }
+            }
+            else if(MediaEnabled)SetMedia(false);
             else if(!locked&&MessageBox.Show(this,"Разрешить телефону управлять проигрывателем этого ПК? На телефоне управление также нужно разрешить и активировать.","Управление с телефона",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
         };
         model.Changed+=RefreshState;timer.Tick+=(_,_)=>Render();timer.Start();
@@ -167,7 +175,12 @@ internal sealed class HostWindow:Form {
         lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
         saving.Text=save(value)?"":value?"Включение не сохранено; оно действует только в этом сеансе.":"Выключение не сохранено. После перезапуска проверьте разрешение ПК.";Render();}
     internal bool Execute(byte action,HostPermission observed){lock(policyGate){return Permission==observed&&observed.Enabled&&MediaKeys.Send(action);}}
-    private void RefreshState(){if(IsDisposed)return;if(IsHandleCreated)try{BeginInvoke(new Action(Render));}catch(InvalidOperationException){}}
+    private int renderPending;
+    private void RefreshState(){
+        if(IsDisposed||!IsHandleCreated||Interlocked.CompareExchange(ref renderPending,1,0)!=0)return;
+        try{BeginInvoke(new Action(()=>{try{if(!IsDisposed)Render();}finally{Interlocked.Exchange(ref renderPending,0);}}));}
+        catch(InvalidOperationException){Interlocked.Exchange(ref renderPending,0);}
+    }
     internal void Render(){
         if(IsDisposed)return;HostSnapshot s=model.Snapshot;
         connection.Text=s.Stage switch {
@@ -186,12 +199,14 @@ internal sealed class HostWindow:Form {
         if(s.Error==HostError.None&&!string.IsNullOrEmpty(usbNotice))reason.Text=usbNotice;
         statistics.Text=$"Сеанс: {s.Seconds} с\nОтправлено кадров: {s.Frames}\nПропущено интервалов: {s.Skipped}\nКод: {s.Error} · этап: {s.FailedAt}\nПоследняя причина: {model.Log.LastReason}\nОшибок журнала: {model.Log.StorageFailures}";
         phone.Text=!fresh?"Вывод телефона не подтверждён":s.ClientOutput switch {0=>"Ожидаем вывод телефона",1=>"Телефон принимает тишину",_=>"Телефон принимает звук"};
-        bool effective=s.Effective(MediaEnabled,Permission.Generation);
-        controlStatus.Text=effective?"Жесты готовы":!s.Live?"Ожидаем телефон":!MediaEnabled?"Нет разрешения ПК":"Активируйте на телефоне";
+        HostPermission devicePolicy=trusted?.CurrentPermission(Permission)??Permission;
+        bool pending=trusted?.PendingFingerprint!=null;
+        bool effective=s.Effective(devicePolicy.Enabled,devicePolicy.Generation);
+        controlStatus.Text=effective?"Жесты готовы":!s.Live?"Ожидаем телефон":pending?"Разрешите этот телефон":!MediaEnabled?"Нет разрешения ПК":"Активируйте на телефоне";
         controlStatus.ForeColor=effective?Accent:TextColor;
         string cause=locked?"Команды заблокированы флагом запуска":!MediaEnabled?"Разрешение ПК выключено":!fresh||s.ClientOutput==0?"Разрешение ПК включено. Подключите телефон.":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активируйте управление кнопкой и держите спокойно 1,5 секунды":"Жесты готовы на телефоне. Наклон меняет громкость телефона.";
-        controlHint.Text=cause;
-        control.Text=MediaEnabled?"Разрешение ПК включено · выключить":"Разрешить управление на ПК";
+        controlHint.Text=pending?"Новый ключ телефона. Сверьте отпечаток в диагностике телефона и разрешите управление один раз.":cause;
+        control.Text=pending?"Разрешить управление этому телефону":MediaEnabled?"Разрешение ПК включено · выключить":"Разрешить управление на ПК";
         control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
         control.BackColor=MediaEnabled?Accent:Surface;control.ForeColor=MediaEnabled?Surface:TextColor;
         if(wasLive!=s.Live){pairOpen=!s.Live;wasLive=s.Live;}

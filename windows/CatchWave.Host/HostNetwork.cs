@@ -29,22 +29,42 @@ internal sealed class HostListener(CancellationToken outer,Func<TcpClient,Cancel
     private CancellationTokenSource? active;
     private TcpListener? listener;
     private Task worker=Task.CompletedTask;
+    private readonly object peersGate=new();private readonly HashSet<Task> peers=[];
+    private readonly SemaphoreSlim slots=new(4,4);
+    private readonly HashSet<IPAddress> sources=[];
     internal string? Address{get;private set;}
     internal async Task Select(string address,int port){
         await gate.WaitAsync(outer).ConfigureAwait(false);
         TcpListener? next=null;
         try {
             if(Address==address)return;
-            next=new TcpListener(IPAddress.Parse(address),port);next.Start(1);
+            next=new TcpListener(IPAddress.Parse(address),port);next.Start(16);
             active?.Cancel();listener?.Stop();await worker.ConfigureAwait(false);active?.Dispose();
             outer.ThrowIfCancellationRequested();
             active=CancellationTokenSource.CreateLinkedTokenSource(outer);listener=next;next=null;Address=address;
             var bound=listener;var token=active.Token;
             worker=Task.Run(async()=>{try{while(!token.IsCancellationRequested){
-                using var peer=await bound.AcceptTcpClientAsync(token).ConfigureAwait(false);
-                await session(peer,token).ConfigureAwait(false);
-            }}catch(OperationCanceledException)when(token.IsCancellationRequested){}catch(SocketException)when(token.IsCancellationRequested){}finally{bound.Stop();}},CancellationToken.None);
+                // Leave excess peers in the bounded TCP backlog instead of closing every new
+                // phone while four unauthenticated handshakes occupy the worker slots.
+                await slots.WaitAsync(token).ConfigureAwait(false);
+                TcpClient peer;
+                try{peer=await bound.AcceptTcpClientAsync(token).ConfigureAwait(false);}
+                catch{slots.Release();throw;}
+                var ip=((IPEndPoint)peer.Client.RemoteEndPoint!).Address;
+                lock(peersGate){
+                    if(!sources.Add(ip)){peer.Dispose();slots.Release();continue;}
+                    Task? task=null;
+                    task=Task.Run(async()=>{
+                        try{await session(peer,token).ConfigureAwait(false);}
+                        catch(Exception e)when(e is IOException or SocketException or OperationCanceledException or System.Security.Authentication.AuthenticationException or ObjectDisposedException){}
+                        finally{peer.Dispose();lock(peersGate){peers.Remove(task!);sources.Remove(ip);}slots.Release();}
+                    },CancellationToken.None);
+                    peers.Add(task);
+                }
+            }}catch(OperationCanceledException)when(token.IsCancellationRequested){}catch(SocketException)when(token.IsCancellationRequested){}finally{
+                bound.Stop();Task[] draining;lock(peersGate)draining=peers.ToArray();await Task.WhenAll(draining).ConfigureAwait(false);
+            }},CancellationToken.None);
         }finally{next?.Stop();gate.Release();}
     }
-    public async ValueTask DisposeAsync(){await gate.WaitAsync().ConfigureAwait(false);try{active?.Cancel();listener?.Stop();await worker.ConfigureAwait(false);active?.Dispose();}finally{gate.Release();gate.Dispose();}}
+    public async ValueTask DisposeAsync(){await gate.WaitAsync().ConfigureAwait(false);try{active?.Cancel();listener?.Stop();await worker.ConfigureAwait(false);active?.Dispose();}finally{slots.Dispose();gate.Release();gate.Dispose();}}
 }

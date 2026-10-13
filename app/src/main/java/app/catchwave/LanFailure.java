@@ -5,6 +5,17 @@ import java.net.*;
 import java.security.cert.*;
 import javax.net.ssl.*;
 final class LanFailure {
+    static String tlsReason(Throwable failure){
+        for(int depth=0;failure!=null&&depth<8;depth++,failure=failure.getCause()){
+            String message=failure.getMessage();if(message==null)continue;
+            message=message.substring(0,Math.min(512,message.length())).toUpperCase(java.util.Locale.ROOT);
+            if(message.contains("WRONG_VERSION_NUMBER")||message.contains("NOT AN SSL"))return "TLS_NOT_A_RECORD";
+            if(message.contains("BAD_RECORD_MAC"))return "TLS_BAD_RECORD_MAC";
+            if(message.contains("UNEXPECTED_MESSAGE"))return "TLS_UNEXPECTED_RECORD";
+            if(message.contains("CONNECTION RESET")||message.contains("CONNECTION CLOSED")||message.contains("SOCKET CLOSED"))return "TLS_PEER_CLOSED";
+        }
+        return "TLS_FAILURE_UNCLASSIFIED";
+    }
     static final class Coded extends IOException {
         final LanConnection.Error code;
         Coded(LanConnection.Error code) { super(code.name()); this.code=code; }

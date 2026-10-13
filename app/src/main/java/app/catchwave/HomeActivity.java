@@ -26,6 +26,5 @@ public final class HomeActivity extends Activity {
         Button settings=CatchWaveUi.button(this,"Настройки и помощь",false);settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class).putExtra("openSettings",true)));CatchWaveUi.add(body,settings,16);
         CatchWaveUi.add(body,CatchWaveUi.text(this,AppIdentity.label(),11,CatchWaveUi.MUTED,false),20);
     }
-    @Override protected void onResume(){super.onResume();MainActivity.visible=true;LanAudioService.uiVisible=true;LanAudioService.maybeAutoStart(this);if(LanState.INSTANCE.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.REFRESH));}
-    @Override protected void onPause(){MainActivity.visible=false;LanAudioService.uiVisible=false;if(LanState.INSTANCE.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.REFRESH));super.onPause();}
+    // Exported launcher visibility is not a fresh owner action. Private screens are entered by buttons.
 }

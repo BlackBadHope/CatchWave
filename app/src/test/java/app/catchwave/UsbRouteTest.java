@@ -21,6 +21,11 @@ public class UsbRouteTest {
         PairingCode code=PairingCode.parse(PAIR);settings.pair(code,true);LanSettings usb=new LanSettings(RuntimeEnvironment.getApplication(),code.loopback(49373));
         assertEquals("127.0.0.1",usb.host());assertEquals(49373,usb.port());assertEquals("192.0.2.1",settings.host());assertEquals(49372,settings.port());assertTrue(usb.hostControl());
     }
+    @Test public void authenticatedUsbCanRememberItsWifiRouteWithoutQrOrGrantingControl(){
+        PairingCode code=PairingCode.parse(PAIR);settings.prefs.edit().putBoolean("resume",true).apply();
+        settings.rememberUsbRoute(code);assertTrue(TransportEpoch.sameHost(settings,code));assertTrue(settings.resume());assertFalse(settings.hostControl());
+        settings.prefs.edit().putBoolean("resume",false).apply();settings.rememberUsbRoute(code);assertFalse(settings.resume());
+    }
     @Test public void explicitDisconnectAndNewReceiverRejectOldCallbacks(){
         TransportEpoch epoch=new TransportEpoch();long old=epoch.next();assertTrue(epoch.current(old,true));assertFalse(epoch.current(old,false));long next=epoch.next();assertFalse(epoch.current(old,true));assertTrue(epoch.current(next,true));epoch.next();assertFalse(epoch.current(next,true));
     }

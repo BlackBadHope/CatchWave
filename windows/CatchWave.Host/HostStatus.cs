@@ -14,13 +14,13 @@ internal sealed class HostStatus {
     private HostStage stage=HostStage.Listening,failedAt;private HostError error;
     private long frames,skipped,lastSequence=-1,reported=-1000,clientAt=-1;
     private int output,sensors;private bool wants,effective;
-    private long clientGeneration;
+    private long clientGeneration,clientNotified=-1000;
     internal readonly DiagnosticLog Log;private long diagnosticAt=-10000;
     internal HostStatus(DiagnosticLog? log=null){Log=log??new DiagnosticLog();}
     internal event Action? Changed;
     internal void Listening(){Log.Event("ROUTE","OWNER_SELECTED_INTERFACE");lock(gate){clock.Reset();stage=HostStage.Listening;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
     internal HostSnapshot Snapshot {get {lock(gate)return new(stage,error,failedAt,clock.ElapsedMilliseconds/1000,frames,skipped,output,sensors,wants,effective,clientAt<0?-1:clock.ElapsedMilliseconds-clientAt,clientGeneration);}}
-    internal void Begin(){Log.Begin();Log.Event("RECONNECT","PEER_CONNECTED");lock(gate){clock.Restart();diagnosticAt=-10000;reported=-1000;stage=HostStage.Tcp;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
+    internal void Begin(){Log.Begin();Log.Event("RECONNECT","PEER_CONNECTED");lock(gate){clock.Restart();diagnosticAt=-10000;reported=clientNotified=-1000;stage=HostStage.Tcp;error=HostError.None;frames=skipped=0;lastSequence=clientAt=-1;output=sensors=0;wants=effective=false;}Changed?.Invoke();}
     internal void Stage(HostStage value){Log.Event("STAGE",value.ToString().ToUpperInvariant());lock(gate){if(error!=HostError.None)return;stage=value;}Changed?.Invoke();}
     internal void Failure(HostError code){lock(gate){if(error!=HostError.None)return;failedAt=stage;stage=code==HostError.PeerClosed?HostStage.Disconnected:HostStage.Error;error=code;effective=false;}Log.Event("STOP",code.ToString().ToUpperInvariant(),(long)Snapshot.FailedAt);Console.WriteLine($"CatchWave stage={Snapshot.Stage} error={code} at={Snapshot.FailedAt}");Changed?.Invoke();}
     internal void End(){Log.Event("STOP",Snapshot.Error==HostError.None?"SESSION_ENDED":Snapshot.Error.ToString().ToUpperInvariant());lock(gate){effective=false;output=sensors=0;if(error==HostError.None)stage=HostStage.Disconnected;}Changed?.Invoke();}
@@ -28,7 +28,7 @@ internal sealed class HostStatus {
         HostStage next=silence?HostStage.SilenceSent:HostStage.AudioSent;notify=stage!=next||clock.ElapsedMilliseconds-reported>=500;
         if(error==HostError.None)stage=next;if(notify)reported=clock.ElapsedMilliseconds;}if(notify)Changed?.Invoke();if(clock.ElapsedMilliseconds-diagnosticAt>=2000){diagnosticAt=clock.ElapsedMilliseconds;Log.Event("SNAPSHOT",silence?"SILENT_SOURCE":"PCM_SENT",frames,skipped,sequence,Snapshot.ClientOutput,Snapshot.ClientAgeMs);}}
     internal void Client(byte[] body){if(body.Length!=13||body[0]!=1||body[1]>2||body[2]>5||body[3]>1||body[4]>1||BinaryPrimitives.ReadInt64BigEndian(body.AsSpan(5))<0)throw new IOException("Invalid client state");
-        lock(gate){output=body[1];sensors=body[2];wants=body[3]==1;effective=body[4]==1;clientGeneration=BinaryPrimitives.ReadInt64BigEndian(body.AsSpan(5));clientAt=clock.ElapsedMilliseconds;}Changed?.Invoke();}
+        bool notify;lock(gate){output=body[1];sensors=body[2];wants=body[3]==1;effective=body[4]==1;clientGeneration=BinaryPrimitives.ReadInt64BigEndian(body.AsSpan(5));clientAt=clock.ElapsedMilliseconds;notify=clientAt-clientNotified>=500;if(notify)clientNotified=clientAt;}if(notify)Changed?.Invoke();}
     internal static HostError Classify(Exception error,HostStage at)=>error switch {
         System.Security.Authentication.AuthenticationException=>HostError.TlsHandshake,
         OperationCanceledException=>at is HostStage.Tls or HostStage.Auth?HostError.AuthTimeout:HostError.WriteTimeout,

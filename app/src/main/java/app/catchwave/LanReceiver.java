@@ -36,6 +36,7 @@ final class LanReceiver implements AutoCloseable {
     private volatile long lastReadExcessMs,playbackResyncs;
     private final AtomicLong lateReadDrops=new AtomicLong(),latePlaybackDrops=new AtomicLong();
     private volatile LanProtocol.Format format;
+    private LanControlIdentity controlIdentity;
     private volatile LanConnection.Stage stage=LanConnection.Stage.TCP;
     private final AtomicBoolean failureReported=new AtomicBoolean();
     private volatile int outputState;
@@ -43,11 +44,13 @@ final class LanReceiver implements AutoCloseable {
     private volatile long policyEpoch=-1;
     private final Object localControlLock=new Object();
     private final LanFreshStream stream=new LanFreshStream();
+    private final PacketRate policyRate=new PacketRate(64);
     private volatile LanTimeline timeline;private volatile boolean timelineArmed;
     private final long createdAt=SystemClock.elapsedRealtime();
     LanReceiver(LanSettings settings,Listener listener){this(settings,listener,()->true,()->0);}
     LanReceiver(LanSettings settings,Listener listener,java.util.function.BooleanSupplier authority,java.util.function.LongSupplier authorityEpoch){this.settings=settings;this.listener=listener;this.authority=authority;this.authorityEpoch=authorityEpoch;}
     boolean fresh(){return active.get()&&format!=null&&latestSequence>=0&&stream.fresh(SystemClock.elapsedRealtime());}
+    boolean failurePending(){return failureReported.get();}
     boolean playbackAlive(){return active.get()&&format!=null&&latestSequence>=0&&!stream.timedOut(SystemClock.elapsedRealtime());}
     boolean focusPaused(){return focusPaused;}
     void waitingForAudio(){if(active.get()&&!focusPaused&&outputState!=0){outputState=0;controls.clear();stage(LanConnection.Stage.BUFFERING);}}
@@ -70,6 +73,7 @@ final class LanReceiver implements AutoCloseable {
     private void fail(LanConnection.Error code,LanConnection.Stage at){if(active.get()&&failureReported.compareAndSet(false,true)){DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,code.name(),at.ordinal());listener.failed(code,at);}}
     void policy(byte[] body)throws IOException {
         if(body.length!=9||body[0]<0||body[0]>1)throw new LanFailure.Coded(LanConnection.Error.PROTOCOL);
+        policyRate.accept(SystemClock.elapsedRealtime());
         boolean allowed;
         synchronized(localControlLock){
             long generation=ByteBuffer.wrap(body,1,8).getLong();if(generation<0||generation<policyEpoch)throw new LanFailure.Coded(LanConnection.Error.PROTOCOL);
@@ -79,6 +83,9 @@ final class LanReceiver implements AutoCloseable {
     }
     void run(){
         try {
+            if(!active.get())return;
+            // First-use hardware key generation must not consume the Host AUTH deadline.
+            controlIdentity=new LanControlIdentity();if(!active.get())return;
             byte[] expected=settings.pin();
             X509TrustManager trust=new X509TrustManager(){
                 public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
@@ -91,10 +98,11 @@ final class LanReceiver implements AutoCloseable {
             };
             SSLContext context=SSLContext.getInstance("TLS");context.init(null,new TrustManager[]{trust},null);
             SSLSocket s=(SSLSocket)context.getSocketFactory().createSocket();if(!publishSocket(s))return;
+            LanNetwork.bind(settings.context,s,settings.host());if(!active.get())return;
             stage(LanConnection.Stage.TCP);s.connect(new InetSocketAddress(settings.host(),settings.port()),5000);s.setSoTimeout(5000);s.setTcpNoDelay(true);
             stage(LanConnection.Stage.TLS);s.setEnabledProtocols(new String[]{"TLSv1.2"});s.startHandshake();s.setSoTimeout(1500);
             DataInputStream in=new DataInputStream(s.getInputStream());DataOutputStream out=new DataOutputStream(s.getOutputStream());
-            stage(LanConnection.Stage.AUTH);LanProtocol.write(out,LanProtocol.AUTH,settings.token());
+            stage(LanConnection.Stage.AUTH);LanProtocol.write(out,LanProtocol.AUTH,controlIdentity.authenticate(settings.token()));
             LanProtocol.Packet initial=LanProtocol.read(in);
             if(initial.kind!=LanProtocol.FORMAT)throw new LanFailure.Coded(LanConnection.Error.AUTH_REJECTED_OR_CLOSED);
             stage(LanConnection.Stage.AUTHENTICATED);format=new LanProtocol.Format(initial.body);DiagnosticStore.LOG.session(format.session);stage(LanConnection.Stage.FORMAT);
@@ -117,7 +125,7 @@ final class LanReceiver implements AutoCloseable {
                     if(ByteBuffer.wrap(packet.body).getLong()==commandSequence){DiagnosticStore.LOG.event(DiagnosticLog.Event.ACK,packet.body[8]==1?"ACCEPTED":"REJECTED",commandSequence);listener.ack(packet.body[8]==1);}
                 }else throw new IOException("Unexpected frame");
             }
-        }catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);}
+        }catch(Exception failure){if(failure instanceof SSLException)DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,LanFailure.tlsReason(failure));fail(LanFailure.classify(failure,stage),stage);}
         finally {close();listener.finished();}
     }
     boolean receiveAudio(LanProtocol.Packet packet,LanProtocol.AudioGate gate,long now)throws IOException{
@@ -221,7 +229,9 @@ final class LanReceiver implements AutoCloseable {
             Control control=controls.poll(250,TimeUnit.MILLISECONDS);if(control==null)continue;
             if(focusPaused||!fresh()||SystemClock.elapsedRealtime()-control.at>500||!commandAllowed(control.epoch,control.policyEpoch)||!commandArmed(control.armEpoch)){DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"QUEUE_REJECTED",control.action);continue;}
             DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"SENT",control.action,commandSequence+1);
-            LanProtocol.write(out,LanProtocol.COMMAND,LanProtocol.command(format.session,++commandSequence,latestSequence,control.action,control.policyEpoch));
+            byte[] command=controlIdentity.sign(LanProtocol.command(format.session,++commandSequence,latestSequence,control.action,control.policyEpoch));
+            if(focusPaused||!commandAllowed(control.epoch,control.policyEpoch)||!commandArmed(control.armEpoch))continue;
+            LanProtocol.write(out,LanProtocol.COMMAND,command);
         }}catch(Exception failure){fail(LanFailure.classify(failure,stage),stage);close();}
     }
     private boolean publishSocket(SSLSocket value){

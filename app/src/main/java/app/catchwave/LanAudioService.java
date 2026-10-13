@@ -19,6 +19,8 @@ public final class LanAudioService extends Service implements SensorEventListene
     private SensorManager sensors;private AudioManager manager;private LanSettings settings;
     private LanReceiver receiver;private PowerManager.WakeLock lock;private LanAudioFocus focus;
     private final TransportEpoch transport=new TransportEpoch();private UsbAudioProxy usb;private boolean wifiFallback;
+    private final LanRecovery recovery=new LanRecovery();private LanConnection.Error recoveryError=LanConnection.Error.NETWORK;
+    private LanConnection.Stage recoveryStage=LanConnection.Stage.TCP;
     private String route="Wi-Fi";private boolean detachRegistered;
     private final BroadcastReceiver detach=new BroadcastReceiver(){public void onReceive(Context context,Intent intent){
         if(UsbManager.ACTION_USB_ACCESSORY_DETACHED.equals(intent.getAction())&&usb!=null&&!usb.present())usbLost();
@@ -82,6 +84,8 @@ public final class LanAudioService extends Service implements SensorEventListene
     }
     private boolean current(long generation){return !destroyed&&transport.current(generation,settings.resume());}
     private void startReceiver(long generation){
+            LatestCallback<Boolean> policyUi=new LatestCallback<>(main,allowed->{if(current(generation)){state.hostAllowed=allowed;if(!allowed&&receiver!=null)receiver.revokePending();syncArming(SystemClock.elapsedRealtime());state.changed();}});
+            LatestCallback<LanConnection.Stage> stageUi=new LatestCallback<>(main,value->{if(current(generation)&&state.error==LanConnection.Error.NONE){state.transition(receiver!=null&&receiver.focusPaused()?LanConnection.Stage.PHONE_AUDIO:value);getSystemService(NotificationManager.class).notify(NOTICE,notification());}});
             receiver=new LanReceiver(settings,new LanReceiver.Listener(){
                 public boolean ready(){
                     java.util.concurrent.CompletableFuture<Boolean> result=LanFocus.request(main,
@@ -93,11 +97,15 @@ public final class LanAudioService extends Service implements SensorEventListene
                     });
                     try{return result.get(1500,java.util.concurrent.TimeUnit.MILLISECONDS);}catch(Exception failure){return false;}
                 }
-                public void stage(LanConnection.Stage value){main.post(()->{if(current(generation)&&state.error==LanConnection.Error.NONE){state.transition(receiver!=null&&receiver.focusPaused()?LanConnection.Stage.PHONE_AUDIO:value);getSystemService(NotificationManager.class).notify(NOTICE,notification());}});}
-                public void failed(LanConnection.Error code,LanConnection.Stage at){main.post(()->{if(current(generation)){if(usb!=null&&wifiFallback&&(code==LanConnection.Error.NETWORK||code==LanConnection.Error.HOST_CLOSED||code==LanConnection.Error.HOST_TIMEOUT)){usbLost();return;}state.fail(settings,code,at);refreshSensors();}});}
-                public void policy(boolean allowed){main.post(()->{if(current(generation)){state.hostAllowed=allowed;if(!allowed&&receiver!=null)receiver.revokePending();syncArming(SystemClock.elapsedRealtime());state.changed();}});}
+                public void stage(LanConnection.Stage value){stageUi.accept(value);}
+                public void failed(LanConnection.Error code,LanConnection.Stage at){main.post(()->{if(current(generation)){if(usb!=null&&wifiFallback&&(code==LanConnection.Error.NETWORK||code==LanConnection.Error.HOST_CLOSED||code==LanConnection.Error.HOST_TIMEOUT)){usbLost();return;}if(retryWifi(code,at))return;cancelRecovery();state.fail(settings,code,at);refreshSensors();}});}
+                public void policy(boolean allowed){policyUi.accept(allowed);}
                 public byte[] report(){return new byte[]{1,0,(byte)state.sensorCode,(byte)(current(generation)&&settings.hostControl()?1:0),(byte)(current(generation)&&commandReady&&arming.commands(SystemClock.elapsedRealtime())&&effectiveControl()?1:0)};}
-                public void connected(){main.post(()->{if(!current(generation)||state.error!=LanConnection.Error.NONE)return;state.connected=true;refreshSensors();main.removeCallbacks(health);main.post(health);});}
+                public void connected(){main.post(()->{if(!current(generation)||state.error!=LanConnection.Error.NONE)return;
+                    if(usb!=null&&usb.pairing()!=null&&!usb.pairing().host.equals("127.0.0.1")){
+                        settings.rememberUsbRoute(usb.pairing());wifiFallback=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"USB_WIFI_ROUTE_READY");
+                    }
+                    cancelRecovery();state.connected=true;refreshSensors();main.removeCallbacks(health);main.post(health);});}
                 public void finished(){main.post(()->finishReceiver(generation));}
                 public void ack(boolean accepted){main.post(()->{if(current(generation)){if(accepted)acceptedAcks++;else rejectedAcks++;state.update(accepted?"Команда передана Windows":"Команда отклонена","Windows подтвердил доставку; результат зависит от активного плеера.");}});}
             },()->current(generation)&&arming.commands(SystemClock.elapsedRealtime()),arming::revision);
@@ -110,6 +118,7 @@ public final class LanAudioService extends Service implements SensorEventListene
         if(settings.resume()&&usb!=null&&wifiFallback)usbLost();else stopSelf();
     }
     private void clearTransport(){
+        cancelRecovery();
         transport.next();main.removeCallbacks(health);if(receiver!=null){receiver.close();receiver=null;}
         if(usb!=null){usb.close();usb=null;}wifiFallback=false;
         if(focus!=null){focus.close();focus=null;}
@@ -135,10 +144,25 @@ public final class LanAudioService extends Service implements SensorEventListene
         if(usb==null)return;boolean fallback=wifiFallback&&settings.resume()&&!destroyed;
         clearTransport();settings=new LanSettings(this);
         if(!fallback){if(settings.resume())state.fail(settings,LanConnection.Error.USB_DISCONNECTED,state.stage);stopSelf();return;}
-        route=state.transport="Wi-Fi";DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"USB_TO_WIFI");state.reset(settings);state.started=true;state.transition(LanConnection.Stage.STARTING);refreshSensors();startReceiver(transport.next());
+        route=state.transport="Wi-Fi";DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"USB_TO_WIFI");state.reset(settings);state.started=true;state.transition(LanConnection.Stage.STARTING);refreshSensors();beginRecovery();startReceiver(transport.next());
+    }
+    private final Runnable recoveryDeadline=()->{if(!destroyed&&settings.resume()&&recovery.active()){
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"RECOVERY_EXPIRED");state.fail(settings,recoveryError,recoveryStage);clearTransport();stopSelf();
+    }};
+    private void beginRecovery(){recovery.begin(SystemClock.elapsedRealtime());main.removeCallbacks(recoveryDeadline);main.postDelayed(recoveryDeadline,LanRecovery.WINDOW_MS);}
+    private void cancelRecovery(){recovery.stop();main.removeCallbacks(recoveryDeadline);}
+    private boolean retryWifi(LanConnection.Error code,LanConnection.Stage at){
+        if(usb!=null||destroyed||!settings.resume()||!LanRecovery.recoverable(code)||!recovery.active()&&!state.connected)return false;
+        if(!recovery.active())beginRecovery();recoveryError=code;recoveryStage=at;
+        long delay=recovery.retry(code,SystemClock.elapsedRealtime());if(delay<0)return false;
+        long generation=transport.next();main.removeCallbacks(health);if(receiver!=null){receiver.close();receiver=null;}
+        if(focus!=null){focus.close();focus=null;}
+        state.reset(settings);state.started=true;state.transition(LanConnection.Stage.BUFFERING);state.detail="Восстанавливаем соединение с тем же ПК. «Отключиться» отменяет повтор.";
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"WIFI_RETRY",delay);refreshSensors();
+        main.postDelayed(()->{if(current(generation)&&recovery.active())startReceiver(generation);},delay);return true;
     }
     private final Runnable health=new Runnable(){public void run(){
-        if(destroyed||receiver==null)return;
+        if(destroyed||receiver==null||receiver.failurePending())return;
         syncArming(SystemClock.elapsedRealtime());
         if(!receiver.playbackAlive()){state.fail(settings,LanConnection.Error.AUDIO_STALLED,state.stage);refreshSensors();stopSelf();return;}
         holdPlaybackPower();

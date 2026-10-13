@@ -5,6 +5,7 @@ import android.content.Context;
 import android.hardware.usb.UsbAccessory;
 import android.hardware.usb.UsbManager;
 import android.os.ParcelFileDescriptor;
+import android.os.Build;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -24,11 +25,19 @@ final class UsbAudioProxy implements AutoCloseable {
     void open()throws IOException {
         if(closed.get())throw new IOException("USB_CANCELLED");
         if(!matches(accessory)||!present()||!manager.hasPermission(accessory))throw new IOException("USB_PERMISSION_REQUIRED");
-        ParcelFileDescriptor opened=manager.openAccessory(accessory);if(opened==null)throw new IOException("USB_OPEN_FAILED");
-        synchronized(this){if(closed.get()){opened.close();throw new IOException("USB_CANCELLED");}inputFd=opened;outputFd=ParcelFileDescriptor.dup(opened.getFileDescriptor());
-            // Read a complete accessory transfer, then parse within its buffer. Small raw reads lose packet tails.
-            input=new BufferedInputStream(new ParcelFileDescriptor.AutoCloseInputStream(inputFd),65536);
-            output=new ParcelFileDescriptor.AutoCloseOutputStream(outputFd);
+        synchronized(this){
+            if(closed.get())throw new IOException("USB_CANCELLED");
+            if(Build.VERSION.SDK_INT>=36){
+                input=new UsbPacketInput(manager.openAccessoryInputStream(accessory));
+                output=manager.openAccessoryOutputStream(accessory);
+                DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"USB_STREAM_API_36");
+            }else{
+                ParcelFileDescriptor opened=manager.openAccessory(accessory);if(opened==null)throw new IOException("USB_OPEN_FAILED");
+                inputFd=opened;outputFd=ParcelFileDescriptor.dup(opened.getFileDescriptor());
+                // Drain an entire accessory transfer before parsing its bytes.
+                input=new UsbPacketInput(new ParcelFileDescriptor.AutoCloseInputStream(inputFd));
+                output=new ParcelFileDescriptor.AutoCloseOutputStream(outputFd);
+            }
         }
         pairing=readPairing(input);
         ServerSocket openedServer=new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"));
@@ -39,8 +48,8 @@ final class UsbAudioProxy implements AutoCloseable {
                 Socket accepted=openedServer.accept();accepted.setTcpNoDelay(true);
                 synchronized(this){if(closed.get()){accepted.close();return;}peer=accepted;}
                 InputStream outbound=accepted.getInputStream();
-                new Thread(()->pump(outbound,output),"CatchWave-USB-out").start();
-                pump(input,accepted.getOutputStream());
+                new Thread(()->pump(outbound,output,true),"CatchWave-USB-out").start();
+                pump(input,accepted.getOutputStream(),false);
             }catch(IOException ignored){close();}
         },"CatchWave-USB-in").start();
     }
@@ -54,11 +63,15 @@ final class UsbAudioProxy implements AutoCloseable {
     }
     PairingCode pairing(){return pairing;}
     PairingCode localPairing(){return pairing.loopback(port);}
-    private void pump(InputStream from,OutputStream to){
-        byte[] bytes=new byte[16384];try{while(!closed.get()){int n=from.read(bytes);if(n<0)break;to.write(bytes,0,n);to.flush();}}catch(IOException ignored){}
+    private void pump(InputStream from,OutputStream to,boolean outbound){
+        boolean first=true;byte[] bytes=new byte[16384];try{while(!closed.get()){int n=from.read(bytes);if(n<0)break;
+            if(first){first=false;boolean tls=n>=3&&(bytes[0]==22||bytes[0]==21)&&bytes[1]==3&&bytes[2]>=0&&bytes[2]<=3;
+                DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,outbound?(tls?"USB_TX_TLS":"USB_TX_NOT_TLS"):(tls?"USB_RX_TLS":"USB_RX_NOT_TLS"),n);}
+            to.write(bytes,0,n);to.flush();}}catch(IOException failure){if(!closed.get()){int errno=0;for(Throwable cause=failure;cause!=null;cause=cause.getCause())if(cause instanceof android.system.ErrnoException system){errno=system.errno;break;}DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,outbound?"USB_TX_IO_CLOSED":"USB_RX_IO_CLOSED",errno);}}
         finally{Arrays.fill(bytes,(byte)0);close();}
     }
     @Override public void close(){if(!closed.compareAndSet(false,true))return;
+        DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"USB_PIPE_CLOSED");
         // File and socket teardown stays off the Android main thread, including cancellation before setup finishes.
         new Thread(()->{synchronized(this){quietly(peer);quietly(server);quietly(inputFd);quietly(outputFd);quietly(input);quietly(output);}},"CatchWave-USB-close").start();
     }

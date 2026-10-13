@@ -5,8 +5,10 @@ import android.content.SharedPreferences;
 import java.util.Base64;
 final class LanSettings {
     final SharedPreferences prefs;
+    final Context context;
     private PairingCode temporary;
     LanSettings(Context context){
+        this.context=context.getApplicationContext();
         prefs=context.getSharedPreferences("lan-audio",Context.MODE_PRIVATE);
         // Owner requested a new OFF default; migrate code19's implicit checked trust once.
         if(!prefs.getBoolean("explicitControlUi21",false))prefs.edit().putBoolean("explicitControlUi21",true).putBoolean("hostControl",false).putBoolean("resume",false).putLong("controlEpoch",controlEpoch()+1).apply();
@@ -25,6 +27,12 @@ final class LanSettings {
     byte[] pin(){return temporary!=null?temporary.pin.clone():Base64.getDecoder().decode(prefs.getString("pin",""));}
     byte[] token(){return temporary!=null?temporary.token.clone():Base64.getDecoder().decode(prefs.getString("token",""));}
     void pair(String code){pair(PairingCode.parse(code));}
+    void rememberUsbRoute(PairingCode code){
+        // Called only after this owner-started USB session has authenticated and begun output.
+        // Keep resume/control decisions and the live UI; learning a route never activates gestures.
+        prefs.edit().putString("host",code.host).putInt("port",code.port).putString("pin",Base64.getEncoder().encodeToString(code.pin))
+            .putString("token",Base64.getEncoder().encodeToString(code.token)).putBoolean("paired",true).apply();
+    }
     void pair(PairingCode code){
         pair(code,hostControl());
     }

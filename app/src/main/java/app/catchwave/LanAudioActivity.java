@@ -10,10 +10,11 @@ import android.widget.*;
 public final class LanAudioActivity extends Activity {
     private final LanState state=LanState.INSTANCE;private final Runnable listener=this::render;
     private LanSettings settings;private TextView status,detail,advanced,sensors,controlStatus,statistics,action,guide,modeStatus,modeDetail;private Button connect,scan,control,mode;
-    private LanAudioView ui;private android.media.AudioManager audio;private long lastVolumeRead=-10000;private boolean scanAfterStop;
+    private LanAudioView ui;private android.media.AudioManager audio;private long lastVolumeRead=-10000;private boolean scanAfterStop;private String controlFingerprint="Недоступен";
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);DiagnosticStore.start(this);settings=new LanSettings(this);state.initialize(settings);
         audio=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);ui=new LanAudioView(this);setContentView(ui);
+        new Thread(()->{try{String value=new LanControlIdentity().fingerprint();runOnUiThread(()->{controlFingerprint=value;render();});}catch(java.security.GeneralSecurityException|java.io.IOException ignored){}},"CatchWave-key-fingerprint").start();
         status=ui.status;detail=ui.detail;advanced=ui.advanced;sensors=ui.sensors;controlStatus=ui.controlStatus;
         statistics=ui.statistics;action=ui.action;guide=ui.guide;modeStatus=ui.modeStatus;modeDetail=ui.modeDetail;
         connect=ui.connect;scan=ui.scan;control=ui.control;mode=ui.mode;
@@ -77,7 +78,7 @@ public final class LanAudioActivity extends Activity {
         String reason=!state.connected?"Нет свежего соединения":!state.hostAllowed?"Управление запрещено в текущем Host на ПК":settings.hostControl()?"Разрешение подтверждено на обеих сторонах":"Включите управление этой кнопкой";
         controlStatus.setText(state.arming+"\n"+reason+"\n"+state.diagnostic);
         guide.setText(guideText());
-        advanced.setText(settings.paired()?settings.host()+":"+settings.port()+"\nSHA-256:\n"+fingerprint():"ПК ещё не сопряжён");
+        advanced.setText((settings.paired()?settings.host()+":"+settings.port()+"\nСертификат ПК SHA-256:\n"+fingerprint():"ПК ещё не сопряжён")+"\nКлюч управления телефона SHA-256:\n"+controlFingerprint);
         if(scanAfterStop&&!state.started){scanAfterStop=false;startActivityForResult(new Intent(this,PairingScanActivity.class),42);}
     }
     private String guideText(){
