@@ -2,9 +2,9 @@
 package app.catchwave;
 /** Fixed public diagnostic codes; never exception text or credentials. */
 final class LanConnection {
-    enum Stage { DISCONNECTED, SCANNED, STARTING, TCP, TLS, AUTH, AUTHENTICATED, FORMAT, FOCUS, OUTPUT, SILENCE, STREAMING, ERROR, BUFFERING }
+    enum Stage { DISCONNECTED, SCANNED, STARTING, TCP, TLS, AUTH, AUTHENTICATED, FORMAT, FOCUS, OUTPUT, SILENCE, STREAMING, ERROR, BUFFERING, PHONE_AUDIO }
     enum Error { NONE, ANDROID_START, CONNECT_TIMEOUT, CONNECT_REFUSED, NETWORK, TLS_HANDSHAKE, PIN_MISMATCH, CERT_TIME,
-        AUTH_REJECTED_OR_CLOSED, PROTOCOL, HOST_TIMEOUT, HOST_CLOSED, AUDIO_FOCUS, AUDIO_FOCUS_LOST, PCM_OUTPUT, AUDIO_STALLED, INTERNAL }
+        AUTH_REJECTED_OR_CLOSED, PROTOCOL, HOST_TIMEOUT, HOST_CLOSED, AUDIO_FOCUS, AUDIO_FOCUS_LOST, PCM_OUTPUT, AUDIO_STALLED, INTERNAL, USB_SETUP, USB_DISCONNECTED }
     static String title(Stage stage) { return switch(stage) {
         case DISCONNECTED -> "Нет соединения"; case SCANNED -> "QR подтверждён — готово к подключению";
         case STARTING -> "Запуск сервиса Android…"; case TCP -> "Подключение к ПК…"; case TLS -> "Проверка защищённого соединения…";
@@ -12,9 +12,12 @@ final class LanConnection {
         case FORMAT -> "Формат звука получен"; case FOCUS -> "Получение аудиофокуса…"; case OUTPUT -> "Подготовка звука телефона…";
         case SILENCE -> "Соединение работает — принимается тишина"; case STREAMING -> "Звук с ПК воспроизводится"; case ERROR -> "Соединение остановлено — ошибка";
         case BUFFERING -> "Соединение сохранено — ожидается свежий звук";
+        case PHONE_AUDIO -> "Приоритет звука телефона — соединение с ПК сохранено";
     }; }
     static String remedy(Error error) { return switch(error) {
         case NONE -> "";
+        case USB_SETUP -> "Не удалось подключиться по USB. Проверьте кабель и разрешите CatchWave доступ к USB-аксессуару.";
+        case USB_DISCONNECTED -> "Кабель отключён. Для автоматического перехода на Wi-Fi сначала сохраните QR этого же Host.";
         case ANDROID_START -> "Android не разрешил запустить сервис. Откройте CatchWave и повторите подключение.";
         case CONNECT_TIMEOUT -> "ПК не ответил на TCP. Проверьте адрес, WiFi и доступность порта Host.";
         case CONNECT_REFUSED -> "Порт ПК не принимает соединение. Запустите Host; после его перезапуска нужен новый QR.";

@@ -1,0 +1,5 @@
+<Project>
+  <Import Project="$(CatchWaveKit)\wdk\build\native\Microsoft.Windows.WDK.x64.props" />
+  <Import Project="$(CatchWaveKit)\microsoft.windows.sdk.cpp.x64\build\native\Microsoft.Windows.SDK.cpp.x64.props" />
+  <Import Project="$(CatchWaveKit)\microsoft.windows.sdk.cpp\build\native\Microsoft.Windows.SDK.cpp.props" />
+</Project>

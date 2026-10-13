@@ -1,7 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.usb.accessory" android:required="false"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -24,9 +26,14 @@
         <activity android:name=".HomeActivity" android:exported="true" android:launchMode="singleTop" android:configChanges="orientation|screenSize">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:configChanges="orientation|screenSize"/>
+        <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTop" android:configChanges="orientation|screenSize"/>
         <activity android:name=".LanAudioActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
         <activity android:name=".PairingScanActivity" android:exported="false"/>
+        <activity android:name=".UsbConnectActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
+        <activity android:name=".UsbAttachActivity" android:exported="true" android:configChanges="orientation|screenSize">
+            <intent-filter><action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"/></intent-filter>
+            <meta-data android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" android:resource="@xml/usb_accessory_filter"/>
+        </activity>
         <activity android:name="com.journeyapps.barcodescanner.CaptureActivity" tools:node="remove"/>
         <service android:name=".LanAudioService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaPlayback" android:stopWithTask="true"/>
         <service android:name=".SyncService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" android:stopWithTask="true"/>

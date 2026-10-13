@@ -36,6 +36,12 @@ if len(matching) != 1:
     raise SystemExit('Pinned registry query mismatch')
 adapter.write_text(''.join(line for line in lines if line not in matching), encoding='utf-8')
 change(adapter, 'DWORD g_DoNotCreateDataFiles = 1;', 'DWORD g_DoNotCreateDataFiles = 1; // Always disabled in CatchWave.')
+adapter_text = adapter.read_text(encoding='utf-8')
+capture_body = re.compile(r'(InstallAllCaptureFilters\([^)]*\)\n)\{\n.*?^\}', re.M | re.S)
+adapter_text, capture_removed = capture_body.subn(lambda m: m.group(1) + '{\n    PAGED_CODE();\n    UNREFERENCED_PARAMETER(_pDeviceObject);\n    UNREFERENCED_PARAMETER(_pIrp);\n    UNREFERENCED_PARAMETER(_pAdapterCommon);\n    return STATUS_SUCCESS; // CatchWave exposes zero capture endpoints.\n}', adapter_text)
+if capture_removed != 1:
+    raise SystemExit('Pinned capture function mismatch')
+adapter.write_text(adapter_text, encoding='utf-8')
 for project in a.output.rglob('*.vcxproj'):
     text = project.read_text(encoding='utf-8-sig')
     text = text.replace(';SYSVAD_BTH_BYPASS', '').replace(';SYSVAD_USB_SIDEBAND', '')
@@ -43,6 +49,15 @@ for project in a.output.rglob('*.vcxproj'):
         text = text.replace('<TargetName>TabletAudioSample</TargetName>', '<TargetName>CatchWaveAudio</TargetName>')
         text = text.replace('Include="*.inx"', 'Include="CatchWaveAudio.inx"')
     project.write_text(text, encoding='utf-8')
+# The pinned sample leaves eight sideband branches outside its feature guards.
+# With both sideband features disabled, keep the existing ordinary virtual-device branch.
+engine = a.output / 'EndpointsCommon/MiniportAudioEngineNode.cpp'
+engine_text = engine.read_text(encoding='utf-8-sig')
+branch = re.compile(r'(^    if \(IsSidebandDevice\(\) && m_pSidebandDevice->Is(?:Volume|Mute)Supported\(m_DeviceType\)\)\n    \{\n.*?^    \}\n    else\n)', re.M | re.S)
+engine_text, guarded = branch.subn(lambda m: '#if defined(SYSVAD_BTH_BYPASS) || defined(SYSVAD_USB_SIDEBAND)\n' + m.group(1) + '#endif\n', engine_text)
+if guarded != 8:
+    raise SystemExit('Pinned sideband branch mismatch')
+engine.write_text(engine_text, encoding='utf-8')
 shutil.copyfile(Path(__file__).with_name('CatchWaveAudio.inx'), a.output / 'TabletAudioSample/CatchWaveAudio.inx')
 files = {str(path.relative_to(a.output)).replace('\\', '/'): hashlib.sha256(path.read_bytes()).hexdigest()
          for path in a.output.rglob('*') if path.is_file()}

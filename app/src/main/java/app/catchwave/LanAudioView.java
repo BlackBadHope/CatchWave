@@ -20,7 +20,7 @@ import android.widget.*;
 final class LanAudioView extends ScrollView {
     static final int BG=CatchWaveUi.BG,TEXT=CatchWaveUi.TEXT,MUTED=CatchWaveUi.MUTED,ACCENT=CatchWaveUi.ACCENT,LINE=CatchWaveUi.LINE;
     final TextView status,modeStatus,modeDetail,volume,detail,statistics,sensors,controlStatus,action,guide,advanced;
-    final Button mode,connect,scan,control,neutral,journal,export,forget,back,home;
+    final Button mode,connect,scan,control,neutral,journal,export,forget,back,home,usb;
     final Switch gestures,sound,off;
     final ImageView tiltImage;
     private final LinearLayout body,help,diagnostics;
@@ -45,6 +45,7 @@ final class LanAudioView extends ScrollView {
         scan=button("Сканировать QR-код",false);connect=button("Подключиться",false);
         LinearLayout pairingActions=row();pairingActions.addView(scan,new LinearLayout.LayoutParams(0,-2,1));
         LinearLayout.LayoutParams connectionAction=new LinearLayout.LayoutParams(0,-2,1);connectionAction.leftMargin=dp(8);pairingActions.addView(connect,connectionAction);add(pairingActions,14);
+        usb=button("Подключить по USB",false);add(usb,8);
 
         modeStatus=text("Подключите компьютер",32,TEXT,true);modeStatus.setGravity(Gravity.CENTER);add(modeStatus,26);
         modeDetail=text("",14,MUTED,false);modeDetail.setGravity(Gravity.CENTER);modeDetail.setLineSpacing(dp(3),1);add(modeDetail,6);

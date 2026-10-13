@@ -6,6 +6,7 @@ import java.util.Base64;
 final class PairingCode {
     final String host; final int port; final byte[] pin,token;
     private PairingCode(String h,int p,byte[] f,byte[] t){host=h;port=p;pin=f;token=t;}
+    PairingCode loopback(int value){if(value<1024||value>65535)throw new IllegalArgumentException("Invalid port");return new PairingCode("127.0.0.1",value,pin.clone(),token.clone());}
     static PairingCode parse(String code){
         if(code==null||code.length()>256)throw new IllegalArgumentException("Invalid pairing QR");
         String[] parts=code.split("/",-1);

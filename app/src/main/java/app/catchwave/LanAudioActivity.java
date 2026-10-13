@@ -10,15 +10,17 @@ import android.widget.*;
 public final class LanAudioActivity extends Activity {
     private final LanState state=LanState.INSTANCE;private final Runnable listener=this::render;
     private LanSettings settings;private TextView status,detail,advanced,sensors,controlStatus,statistics,action,guide,modeStatus,modeDetail;private Button connect,scan,control,mode;
-    private LanAudioView ui;private android.media.AudioManager audio;private long lastVolumeRead=-10000;private boolean scanAfterStop;
+    private LanAudioView ui;private android.media.AudioManager audio;private long lastVolumeRead=-10000;private boolean scanAfterStop;private String controlFingerprint="Недоступен";
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);DiagnosticStore.start(this);settings=new LanSettings(this);state.initialize(settings);
         audio=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);ui=new LanAudioView(this);setContentView(ui);
+        new Thread(()->{try{String value=new LanControlIdentity().fingerprint();runOnUiThread(()->{controlFingerprint=value;render();});}catch(java.security.GeneralSecurityException|java.io.IOException ignored){}},"CatchWave-key-fingerprint").start();
         status=ui.status;detail=ui.detail;advanced=ui.advanced;sensors=ui.sensors;controlStatus=ui.controlStatus;
         statistics=ui.statistics;action=ui.action;guide=ui.guide;modeStatus=ui.modeStatus;modeDetail=ui.modeDetail;
         connect=ui.connect;scan=ui.scan;control=ui.control;mode=ui.mode;
         mode.setOnClickListener(v->{if(state.started)startService(new Intent(this,LanAudioService.class).setAction(state.armed?LanAudioService.DEACTIVATE:LanAudioService.ACTIVATE));});
         ui.home.setOnClickListener(v->CatchWaveUi.home(this));
+        ui.usb.setOnClickListener(v->startActivity(new Intent(this,UsbConnectActivity.class)));
         scan.setOnClickListener(v->{
             if(!state.started)startActivityForResult(new Intent(this,PairingScanActivity.class),42);
             else CatchWaveUi.dialog(this).setTitle("Подключить другой ПК?")
@@ -57,9 +59,10 @@ public final class LanAudioActivity extends Activity {
     private boolean effectiveControl(){return LanConnection.effectiveControl(state.connected,settings.hostControl(),state.hostAllowed);}
     private void render(){
         if(isFinishing()||status==null)return;
-        status.setText(switch(state.stage){case STREAMING -> "Подключено";case SILENCE -> "Тишина с ПК";case BUFFERING -> "Ждём звук";case ERROR -> "Ошибка связи";case DISCONNECTED,SCANNED -> "Не подключено";default -> "Подключение…";});
+        status.setText(switch(state.stage){case STREAMING -> "Подключено";case SILENCE -> "Тишина с ПК";case BUFFERING -> "Ждём звук";case PHONE_AUDIO -> "Звук телефона";case ERROR -> "Ошибка связи";case DISCONNECTED,SCANNED -> "Не подключено";default -> "Подключение…";});
         status.setTextColor(state.connected?LanAudioView.ACCENT:state.error!=LanConnection.Error.NONE?0xfff4ae98:LanAudioView.MUTED);
-        detail.setText(state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
+        detail.setText((state.started?"Подключение: "+state.transport+"\n":"")+state.detail);sensors.setText(state.sensorDetail);statistics.setText(state.statistics);action.setText(state.action);
+        ui.usb.setText(state.started&&"USB".equals(state.transport)?"Подключено по USB":"Подключить по USB");
         connect.setText(state.started?"Отключиться":state.error==LanConnection.Error.NONE?"Подключиться":"Повторить подключение");
         scan.setEnabled(true);scan.setVisibility(android.view.View.VISIBLE);ui.connectionButtonStyle(state.started);
         boolean effective=effectiveControl();control.setText(settings.hostControl()?"Отозвать разрешение управления":"Разрешить управление");control.setEnabled(settings.hostControl()||state.connected&&state.hostAllowed);
@@ -75,10 +78,11 @@ public final class LanAudioActivity extends Activity {
         String reason=!state.connected?"Нет свежего соединения":!state.hostAllowed?"Управление запрещено в текущем Host на ПК":settings.hostControl()?"Разрешение подтверждено на обеих сторонах":"Включите управление этой кнопкой";
         controlStatus.setText(state.arming+"\n"+reason+"\n"+state.diagnostic);
         guide.setText(guideText());
-        advanced.setText(settings.paired()?settings.host()+":"+settings.port()+"\nSHA-256:\n"+fingerprint():"ПК ещё не сопряжён");
+        advanced.setText((settings.paired()?settings.host()+":"+settings.port()+"\nСертификат ПК SHA-256:\n"+fingerprint():"ПК ещё не сопряжён")+"\nКлюч управления телефона SHA-256:\n"+controlFingerprint);
         if(scanAfterStop&&!state.started){scanAfterStop=false;startActivityForResult(new Intent(this,PairingScanActivity.class),42);}
     }
     private String guideText(){
+        if(state.stage==LanConnection.Stage.PHONE_AUDIO)return "Телефон имеет приоритет. Звук с ПК вернётся автоматически после окончания воспроизведения на телефоне. «Отключиться» отменяет возврат.";
         if(state.stage==LanConnection.Stage.BUFFERING)return "Ожидается свежий звук. Команды приостановлены; короткая пауза не требует повторного подключения.";
         if(!state.connected)return "Активация недоступна: сначала подключитесь к Host.";
         if(!state.hostAllowed)return "Активация недоступна: нажмите «Включить управление хостом» в Host на ПК и подтвердите диалог.";
@@ -88,7 +92,7 @@ public final class LanAudioActivity extends Activity {
         return current+"\nПосле включения держите телефон спокойно 1,5 с для начальной нейтрали. Для наклонов — экраном к себе, верхним краем вверх. Наклон вправо примерно на 30° с удержанием прибавляет громкость, влево — убавляет, шагами каждые 0,4 с. Возврат в нейтраль останавливает изменение. Поднятие и поворот не блокируют постукивания. При большой смене позы ненадолго остановите движение: направление наклонов обновится автоматически. На столе экраном вверх или вниз громкость не меняется. Встряхивание или 3 коротких постукивания пальцем по корпусу: play/pause; 4: next; 5: previous; 6: mute/restore телефона. Интервал постукиваний 0,2–0,5 с, затем пауза 0,7 с.\nЗвук с ПК продолжается независимо от жестов. Отзыв разрешения, отключение соединения или сбой датчиков выключают управление. Режим экспериментален; распознавание движений ещё требует проверки на устройстве.";
     }
     private String fingerprint(){try{StringBuilder b=new StringBuilder();for(byte v:settings.pin()){if(b.length()>0)b.append(':');b.append(String.format(java.util.Locale.ROOT,"%02x",v&255));}return b.toString();}catch(IllegalArgumentException bad){return "Нужно новое QR-сопряжение";}}
-    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==42){state.initialize(settings);render();}if(code==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){try(java.io.OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out!=null)out.write(DiagnosticStore.LOG.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));Toast.makeText(this,"Диагностика сохранена",Toast.LENGTH_SHORT).show();}catch(java.io.IOException|SecurityException failure){Toast.makeText(this,"Не удалось сохранить диагностику",Toast.LENGTH_LONG).show();}}}
+    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==42){state.initialize(settings);if(result==RESULT_OK&&!state.started)begin();render();}if(code==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){try(java.io.OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out!=null)out.write(DiagnosticStore.LOG.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));Toast.makeText(this,"Диагностика сохранена",Toast.LENGTH_SHORT).show();}catch(java.io.IOException|SecurityException failure){Toast.makeText(this,"Не удалось сохранить диагностику",Toast.LENGTH_LONG).show();}}}
     @Override public void onRequestPermissionsResult(int code,String[] p,int[] r){super.onRequestPermissionsResult(code,p,r);if(code==24)begin();}
     @Override protected void onResume(){super.onResume();LanAudioService.uiVisible=true;state.initialize(settings);LanAudioService.maybeAutoStart(this);refresh();}
     @Override protected void onPause(){LanAudioService.uiVisible=MainActivity.visible;refresh();super.onPause();}

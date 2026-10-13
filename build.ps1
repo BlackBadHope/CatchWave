@@ -19,6 +19,8 @@ try {
     $waveMetadata = Get-Content -LiteralPath "$waveScratch/app/outputs/apk/release/output-metadata.json" -Raw | ConvertFrom-Json
     $waveElement = $waveMetadata.elements[0]
     $waveName = "CatchWave-$($waveElement.versionName)-code$($waveElement.versionCode).apk"
-    Copy-Item -LiteralPath "$waveScratch/app/outputs/apk/release/app-release.apk" -Destination (Join-Path $waveDist $waveName)
+    $waveBuiltApk=Join-Path "$waveScratch/app/outputs/apk/release" $waveElement.outputFile
+    if ($waveElement.outputFile -like '*unsigned*') { $waveName=$waveName.Replace('.apk','-UNSIGNED.apk'); Write-Warning 'Unsigned build: sign privately before distribution. See tools/Sign-Release.ps1.' }
+    Copy-Item -LiteralPath $waveBuiltApk -Destination (Join-Path $waveDist $waveName)
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $waveDist $waveName)
 } finally { Pop-Location }

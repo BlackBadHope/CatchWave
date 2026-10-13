@@ -8,6 +8,7 @@ local.properties
 *.pem
 *.p12
 *.pfx
+*.dpapi
 .env
 .env.*
 *.log

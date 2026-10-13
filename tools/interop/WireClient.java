@@ -12,11 +12,13 @@ import javax.net.ssl.*;
 
 /** JVM/Schannel test only: credentials are a separate loopback test identity passed via stdin, never owner QR. */
 public final class WireClient {
-    public static void main(String[] args){try{run();System.out.println("PASS: JVM TLS/pin/auth/format/policy + startup delay/backlog + synthetic PCM + locked command ACK");}catch(Exception e){System.err.println("FAIL: interop category="+e.getClass().getSimpleName());System.exit(1);}}
+    public static void main(String[] args){try{run();System.out.println("PASS: JVM TLS/pin/auth + P256 signed control + startup delay/backlog + synthetic PCM");}catch(Exception e){System.err.println("FAIL: interop category="+e.getClass().getSimpleName());System.exit(1);}}
     private static void require(boolean ok)throws IOException{if(!ok)throw new IOException("Test assertion failed");}
     private static void run()throws Exception{
         BufferedReader input=new BufferedReader(new InputStreamReader(System.in));
         int port=Integer.parseInt(input.readLine());byte[] pin=Base64.getDecoder().decode(input.readLine()),token=Base64.getDecoder().decode(input.readLine());
+        KeyPairGenerator generator=KeyPairGenerator.getInstance("EC");generator.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));KeyPair keys=generator.generateKeyPair();byte[] publicKey=keys.getPublic().getEncoded();
+        System.out.println(Base64.getEncoder().encodeToString(publicKey));System.out.flush();require("approved".equals(input.readLine()));
         X509TrustManager trust=new X509TrustManager(){
             public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
             public void checkClientTrusted(X509Certificate[] c,String a)throws CertificateException{throw new CertificateException();}
@@ -25,9 +27,9 @@ public final class WireClient {
         SSLContext context=SSLContext.getInstance("TLS");context.init(null,new TrustManager[]{trust},null);
         try(SSLSocket socket=(SSLSocket)context.getSocketFactory().createSocket()){
             socket.connect(new InetSocketAddress("127.0.0.1",port),2000);socket.setSoTimeout(2000);socket.setEnabledProtocols(new String[]{"TLSv1.2"});socket.startHandshake();
-            DataInputStream in=new DataInputStream(socket.getInputStream());DataOutputStream out=new DataOutputStream(socket.getOutputStream());LanProtocol.write(out,LanProtocol.AUTH,token);
+            DataInputStream in=new DataInputStream(socket.getInputStream());DataOutputStream out=new DataOutputStream(socket.getOutputStream());LanProtocol.write(out,LanProtocol.AUTH,ByteBuffer.allocate(35+publicKey.length).put(token).put((byte)1).putShort((short)publicKey.length).put(publicKey).array());
             LanProtocol.Packet p=LanProtocol.read(in);require(p.kind==LanProtocol.FORMAT);LanProtocol.Format format=new LanProtocol.Format(p.body);require(format.rate==48000&&format.channels==2);
-            p=LanProtocol.read(in);require(p.kind==LanProtocol.POLICY&&p.body.length==9&&p.body[0]==0);
+            p=LanProtocol.read(in);require(p.kind==LanProtocol.POLICY&&p.body.length==9&&p.body[0]==1);long policyEpoch=ByteBuffer.wrap(p.body,1,8).getLong();
             p=LanProtocol.firstAudio(in,body->require(body.length==9));LanProtocol.AudioGate gate=new LanProtocol.AudioGate();gate.accept(p.body,format.bytes());
             long began=System.nanoTime()/1000000;LanTimeline timeline=new LanTimeline(ByteBuffer.wrap(p.body,8,8).getLong(),began);LanFreshStream fresh=new LanFreshStream();fresh.received(began);
             ArrayBlockingQueue<byte[]> queue=new ArrayBlockingQueue<>(8);queue.offer(p.body);AtomicInteger dropped=new AtomicInteger();AtomicBoolean running=new AtomicBoolean(true);AtomicReference<Throwable> failure=new AtomicReference<>();AtomicReference<LanProtocol.Packet> ack=new AtomicReference<>();
@@ -46,9 +48,10 @@ public final class WireClient {
                     for(int j=16;j<frame.length;j++)require(frame[j]==0);
                 }
                 LanProtocol.write(out,LanProtocol.CLIENT_STATE,ByteBuffer.allocate(13).put(new byte[]{1,1,1,0,0}).putLong(0).array());
-                LanProtocol.write(out,LanProtocol.COMMAND,LanProtocol.command(format.session,1,ByteBuffer.wrap(frame).getLong(),1,0));
+                byte[] core=LanProtocol.command(format.session,1,ByteBuffer.wrap(frame).getLong(),1,policyEpoch);Signature signature=Signature.getInstance("SHA256withECDSA");signature.initSign(keys.getPrivate());signature.update(core);byte[] proof=signature.sign();
+                LanProtocol.write(out,LanProtocol.COMMAND,ByteBuffer.allocate(42+proof.length).put(core).put((byte)proof.length).put(proof).array());
                 deadline=System.nanoTime()/1000000+2000;while(ack.get()==null&&System.nanoTime()/1000000<deadline)Thread.sleep(10);
-                require(ack.get()!=null&&ack.get().body.length==9&&ack.get().body[8]==0&&failure.get()==null);
+                require(ack.get()!=null&&ack.get().body.length==9&&ack.get().body[8]==1&&failure.get()==null);
             }finally{running.set(false);socket.close();reader.join(2000);require(!reader.isAlive());}
 
         }finally{java.util.Arrays.fill(token,(byte)0);}

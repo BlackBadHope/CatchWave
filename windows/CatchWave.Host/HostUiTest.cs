@@ -4,20 +4,23 @@ namespace CatchWave.Host;
 /** Inspect an unshown test form; no screen capture or owner QR, no Windows media input. */
 internal static class HostUiTest {
     internal static int Run(){int checks=0;Exception? failure=null;var thread=new Thread(()=>{try{
-        using var identity=new HostIdentity();using var stop=new CancellationTokenSource();var status=new HostStatus();
+        using var identity=new HostIdentity(new HostTrustedDevices());using var signer=new SignedPeer();using var stop=new CancellationTokenSource();var status=new HostStatus();
         using var form=new HostWindow(identity,"127.0.0.1",49372,true,false,stop,_=>true,false,status);
         var action=(Button)typeof(HostWindow).GetField("control",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         var label=(Label)typeof(HostWindow).GetField("controlStatus",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         var hint=(Label)typeof(HostWindow).GetField("controlHint",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
         void Check(bool value){if(!value)throw new Exception("UI state assertion failed");checks++;}
+        Check(HostWindow.WaitingHint(HostStage.Listening,14999)==""&&HostWindow.WaitingHint(HostStage.Listening,15000).Contains("брандмауэр")&&HostWindow.WaitingHint(HostStage.AudioSent,30000)=="");
         Check(!action.Enabled&&action.Text=="Разрешить управление на ПК"&&label.Text!="Жесты готовы");
         status.Begin();status.Stage(HostStage.Tls);form.Render();Check(!action.Enabled&&label.Text!="Жесты готовы");
         status.Frame(0,true);form.Render();Check(!action.Enabled); // Sent silence alone does not confirm phone output.
         status.Client(Protocol.ClientState(1,1,false,false));form.Render();Check(action.Enabled&&action.Text=="Разрешить управление на ПК");
+        identity.Trusted.Observe(signer.PublicKey);form.Render();Check(action.Text=="Разрешить управление этому телефону"&&label.Text=="Разрешите этот телефон");signer.Approve(identity);
         typeof(HostWindow).GetMethod("SetMedia",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(form,new object[]{true});
         Check(action.Enabled&&action.Text=="Разрешение ПК включено · выключить"&&hint.Text.Contains("включите управление на телефоне"));
-        status.Client(Protocol.ClientState(1,1,true,false,1));form.Render();Check(action.Enabled&&hint.Text.Contains("заблокировал команды"));
-        status.Client(Protocol.ClientState(1,2,true,true,1));form.Render();Check(action.Enabled&&action.Text=="Разрешение ПК включено · выключить"&&label.Text=="Жесты готовы");
+        long epoch=identity.Trusted.PermissionFor(signer.PublicKey,new(true,1)).Generation;
+        status.Client(Protocol.ClientState(1,1,true,false,epoch));form.Render();Check(action.Enabled&&hint.Text.Contains("заблокировал команды"));
+        status.Client(Protocol.ClientState(1,2,true,true,epoch));form.Render();Check(action.Enabled&&action.Text=="Разрешение ПК включено · выключить"&&label.Text=="Жесты готовы");
         status.Failure(HostError.PeerClosed);form.Render();Check(action.Enabled&&action.Text=="Разрешение ПК включено · выключить"&&label.Text!="Жесты готовы");
         using var locked=new HostWindow(identity,"127.0.0.1",49373,true,true,stop,_=>throw new Exception("Locked pilot must not save"),true,new HostStatus());
         Check(!locked.MediaEnabled);
@@ -35,6 +38,22 @@ internal static class HostUiTest {
             menu.Close(ToolStripDropDownCloseReason.AppClicked);Application.DoEvents();
             Check(!menu.IsDisposed&&form.Visible);
         }
+        var selected=new HostAudioSource(factory:(_,_)=>new SilenceSource());
+        var headphones=new AudioOutput("fixture-active","Fixture headphones",1,true);
+        form.ConfigureAudio(selected,()=>new[]{headphones,new AudioOutput("fixture-unplugged","Fixture unplugged",8)});
+        var audioButton=(Button)typeof(HostWindow).GetField("audioOutput",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        var audioMenu=(ContextMenuStrip)typeof(HostWindow).GetField("audioMenu",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(form)!;
+        for(int i=0;i<3;i++){
+            audioButton.PerformClick();var until=System.Diagnostics.Stopwatch.StartNew();
+            while(!audioMenu.Visible&&until.ElapsedMilliseconds<1000){Application.DoEvents();Thread.Sleep(5);}
+            Check(audioMenu.Visible&&audioMenu.Items.Count==4&&!audioMenu.Items[3].Enabled);
+            ((ToolStripMenuItem)audioMenu.Items[2]).PerformClick();audioMenu.Close(ToolStripDropDownCloseReason.ItemClicked);Application.DoEvents();
+            Check(selected.Selected.Id==headphones.Id&&audioButton.Text==headphones.Name&&!audioMenu.IsDisposed);
+        }
+        using(selected.Open(null)){form.Render();Check(!audioButton.Enabled);}
+        form.Render();Check(audioButton.Enabled);form.AssertLayout();
+        var live=new HostAudioSource(factory:(_,_)=>new SilenceSource(),liveSwitch:true);form.ConfigureAudio(live,()=>new[]{headphones});
+        using(live.Open(null)){form.Render();Check(audioButton.Enabled);}
         form.Close();
     }catch(Exception e){failure=e;}});thread.SetApartmentState(ApartmentState.STA);thread.Start();if(!thread.Join(TimeSpan.FromSeconds(5)))throw new Exception("UI test timed out");if(failure!=null)throw failure;return checks;}
 }

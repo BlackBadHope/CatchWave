@@ -10,30 +10,41 @@ internal sealed class SilenceSource:IPcmSource {
 internal sealed class WasapiSource:IPcmSource {
     private readonly IAudioClient client;private readonly IAudioCaptureClient capture;
     private readonly object enumeratorObject;private readonly IMMDevice device;
-    private readonly Queue<byte> queued=new();private readonly int sourceBits,blockAlign;private readonly bool floating;
+    private readonly PcmFrameBuffer queued=new(3840*8);private readonly int blockAlign=4;
     public PcmFormat Format{get;}
-    private readonly DiagnosticLog? log;private readonly System.Diagnostics.Stopwatch clock=System.Diagnostics.Stopwatch.StartNew();private long reportAt=-10000,packets,silentPackets;private readonly string selectedId;
-    public WasapiSource(DiagnosticLog? log=null) {
+    private readonly DiagnosticLog? log;private readonly System.Diagnostics.Stopwatch clock=System.Diagnostics.Stopwatch.StartNew();private long reportAt=-10000,packets,silentPackets;private readonly string selectedId;private readonly bool followDefault;
+    internal string SelectedId=>selectedId;
+    public WasapiSource(DiagnosticLog? log=null,string? endpointId=null) {
         this.log=log;
+        followDefault=endpointId==null;
         object? partialEnumerator=null,partialClient=null,partialCapture=null;IMMDevice? partialDevice=null;
         try {
-        enumeratorObject=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"))!)!;
+        enumeratorObject=AudioOutputs.Enumerator();
         partialEnumerator=enumeratorObject;
         var enumerator=(IMMDeviceEnumerator)enumeratorObject;
-        Check(enumerator.GetDefaultAudioEndpoint(0,1,out device));partialDevice=device;Check(device.GetId(out selectedId));log?.Event("ROUTE","DEFAULT_CAPTURE_OPENED");Guid iid=typeof(IAudioClient).GUID;
+        Check(endpointId==null?enumerator.GetDefaultAudioEndpoint(0,1,out device):enumerator.GetDevice(endpointId,out device));partialDevice=device;
+        Check(device.GetState(out uint state));if(state!=1)throw new IOException("Selected audio output is unavailable");
+        Check(device.GetId(out selectedId));Guid iid=typeof(IAudioClient).GUID;
         Check(device.Activate(ref iid,23,IntPtr.Zero,out object value));partialClient=value;client=(IAudioClient)value;
         Check(client.GetMixFormat(out IntPtr mix));
         try {
-            ushort tag=(ushort)Marshal.ReadInt16(mix),channels=(ushort)Marshal.ReadInt16(mix,2);
-            int rate=Marshal.ReadInt32(mix,4);blockAlign=(ushort)Marshal.ReadInt16(mix,12);sourceBits=(ushort)Marshal.ReadInt16(mix,14);
-            Format=new(rate,channels);
-            if(tag==0xFFFE){Guid sub=Marshal.PtrToStructure<Guid>(mix+24);floating=sub==new Guid("00000003-0000-0010-8000-00aa00389b71");if(!floating&&sub!=new Guid("00000001-0000-0010-8000-00aa00389b71"))throw new NotSupportedException("PCM subtype unsupported");}
-            else {floating=tag==3;if(tag!=1&&!floating)throw new NotSupportedException("PCM format unsupported");}
-            if(!Format.Valid||sourceBits is not (16 or 24 or 32)||floating&&sourceBits!=32||blockAlign!=channels*sourceBits/8)
-                throw new NotSupportedException("Default output must be mono/stereo PCM at 44100/48000/96000 Hz");
-            Check(client.Initialize(0,0x00020000,1_000_000,0,mix,IntPtr.Zero)); // Shared, AUDCLNT_STREAMFLAGS_LOOPBACK.
+            int nativeRate=Marshal.ReadInt32(mix,4),nativeChannels=(ushort)Marshal.ReadInt16(mix,2),nativeBits=(ushort)Marshal.ReadInt16(mix,14);
+            log?.Event("CAPTURE","NATIVE_MIX_FORMAT",nativeRate,nativeChannels,nativeBits);
+            // Windows' shared audio engine performs the channel matrix/sample-rate conversion.
+            // The Android stream is always PCM16 stereo 48 kHz, without changing device settings.
+            Format=new(48000,2);
+            byte[] requested=new byte[18];
+            BitConverter.GetBytes((ushort)1).CopyTo(requested,0);BitConverter.GetBytes((ushort)2).CopyTo(requested,2);
+            BitConverter.GetBytes(48000).CopyTo(requested,4);BitConverter.GetBytes(192000).CopyTo(requested,8);
+            BitConverter.GetBytes((ushort)4).CopyTo(requested,12);BitConverter.GetBytes((ushort)16).CopyTo(requested,14);
+            IntPtr format=Marshal.AllocCoTaskMem(requested.Length);
+            try{Marshal.Copy(requested,0,format,requested.Length);int hr=client.Initialize(0,0x88020000,1_000_000,0,format,IntPtr.Zero);
+                if(hr<0)log?.Event("CAPTURE","AUTO_FORMAT_REJECTED",hr,nativeRate,nativeChannels,nativeBits);Check(hr);
+                log?.Event("CAPTURE","AUTO_FORMAT_READY",48000,2,16);
+            }finally{Marshal.FreeCoTaskMem(format);}
         }finally{Marshal.FreeCoTaskMem(mix);}
         Guid captureId=typeof(IAudioCaptureClient).GUID;Check(client.GetService(ref captureId,out object service));partialCapture=service;capture=(IAudioCaptureClient)service;Check(client.Start());
+        log?.Event("ROUTE",endpointId==null?"DEFAULT_CAPTURE_OPENED":"SELECTED_CAPTURE_OPENED");
         }catch{
             if(partialCapture!=null)Marshal.ReleaseComObject(partialCapture);if(partialClient!=null)Marshal.ReleaseComObject(partialClient);
             if(partialDevice!=null)Marshal.ReleaseComObject(partialDevice);if(partialEnumerator!=null)Marshal.ReleaseComObject(partialEnumerator);throw;
@@ -47,17 +58,13 @@ internal sealed class WasapiSource:IPcmSource {
                 if((flags&1)!=0)queued.Clear(); // Discontinuity: drop old samples.
                 int count=checked((int)frames*blockAlign);byte[] native=new byte[count];
                 if((flags&2)==0)Marshal.Copy(ptr,native,0,count); // Silent buffers have no readable pointer.
-                byte[] pcm=Convert(native,sourceBits,floating);
-                foreach(byte sample in pcm)queued.Enqueue(sample);
-                // Keep at most 160 ms; packet overflow never turns into unlimited latency.
-                while(queued.Count>Format.Bytes*8)queued.Dequeue();
+                queued.Write(native); // Windows already supplied PCM16; copy chunks, not individual bytes.
             }finally{Check(capture.ReleaseBuffer(frames));}
             Check(capture.GetNextPacketSize(out available));
         }
-        byte[] frame=new byte[Format.Bytes];int n=Math.Min(frame.Length,queued.Count);
-        for(int i=0;i<n;i++)frame[i]=queued.Dequeue();
-        if(clock.ElapsedMilliseconds-reportAt>=2000){reportAt=clock.ElapsedMilliseconds;log?.Event("CAPTURE",n==0?"NO_CAPTURE_PACKET":frame.AsSpan().IndexOfAnyExcept((byte)0)<0?"SILENT_CAPTURE":"PCM_CAPTURE",packets,silentPackets,n);
-            IMMDevice? current=null;try{Check(((IMMDeviceEnumerator)enumeratorObject).GetDefaultAudioEndpoint(0,1,out current));Check(current.GetId(out string id));if(id!=selectedId)log?.Event("ROUTE","DEFAULT_CHANGED");}catch(System.Runtime.InteropServices.COMException){log?.Event("ROUTE","DEFAULT_UNAVAILABLE");}finally{if(current!=null)Marshal.ReleaseComObject(current);}}
+        byte[] frame=new byte[Format.Bytes];int n=queued.Read(frame);
+        if(clock.ElapsedMilliseconds-reportAt>=2000){reportAt=clock.ElapsedMilliseconds;log?.Event("CAPTURE",n==0?"NO_CAPTURE_PACKET":frame.AsSpan().IndexOfAnyExcept((byte)0)<0?"SILENT_CAPTURE":"PCM_CAPTURE",packets,silentPackets,n,queued.DroppedBytes);
+            if(followDefault){IMMDevice? current=null;try{Check(((IMMDeviceEnumerator)enumeratorObject).GetDefaultAudioEndpoint(0,1,out current));Check(current.GetId(out string id));if(id!=selectedId)log?.Event("ROUTE","DEFAULT_CHANGED");}catch(System.Runtime.InteropServices.COMException){log?.Event("ROUTE","DEFAULT_UNAVAILABLE");}finally{if(current!=null)Marshal.ReleaseComObject(current);}}}
         return frame;
     }
     internal static byte[] Convert(byte[] native,int bits,bool floating) {
@@ -75,14 +82,16 @@ internal sealed class WasapiSource:IPcmSource {
 }
 [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator {
-    [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IntPtr devices);
+    [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection devices);
     [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device);
+    [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device);
 }
 [ComImport,Guid("D666063F-1587-4E43-81F1-B948E807363F"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDevice {
     [PreserveSig]int Activate(ref Guid id,uint context,IntPtr parameters,[MarshalAs(UnmanagedType.IUnknown)]out object value);
-    [PreserveSig]int OpenPropertyStore(uint access,out IntPtr properties);
+    [PreserveSig]int OpenPropertyStore(uint access,out IAudioPropertyStore properties);
     [PreserveSig]int GetId([MarshalAs(UnmanagedType.LPWStr)]out string id);
+    [PreserveSig]int GetState(out uint state);
 }
 [ComImport,Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioClient {

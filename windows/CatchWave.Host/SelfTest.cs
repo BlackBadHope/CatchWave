@@ -14,6 +14,8 @@ internal static class SelfTest {
     internal static async Task<int> Run(string? qrFixture=null){
         try {
             checks+=HostUiTest.Run();
+            checks+=AudioSourceTest.Run();
+            checks+=await UsbTest.Run();
             checks+=await NetworkTest.Run();
             checks+=DiagnosticTest.Run();
             string preference=Path.Combine(Path.GetTempPath(),"catchwave-selftest-"+Guid.NewGuid().ToString("N")+".json");
@@ -41,8 +43,10 @@ internal static class SelfTest {
             await using var frame=new MemoryStream();await Protocol.Write(frame,2,Protocol.Audio(7,140,new byte[3840]),CancellationToken.None);frame.Position=0;Packet decoded=await Protocol.Read(frame,CancellationToken.None);
             Check(decoded.Kind==2&&decoded.Body.Length==3856&&BinaryPrimitives.ReadInt64BigEndian(decoded.Body)==7,"wire frame");
             await using var bad=new MemoryStream(new byte[]{2,0,1,0,0});try{await Protocol.Read(bad,CancellationToken.None);throw new Exception("oversize allowed");}catch(IOException){checks++;}
-            using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));using var identity=new HostIdentity();
+            using var identity=new HostIdentity(new HostTrustedDevices());
+            checks+=await SecurityTest.Run();
             await FramePublication(identity,200,true);await FramePublication(identity,1000,false);
+            using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));
             await Session(identity,false,deadline.Token);await Session(identity,true,deadline.Token);
             var status=new HostStatus();status.Begin();status.Stage(HostStage.Authenticated);status.Frame(0,true);
             Check(!status.Snapshot.Effective(true),"sent PCM without phone output is not effective control");
@@ -55,6 +59,7 @@ internal static class SelfTest {
         }catch(Exception e){Console.Error.WriteLine("FAIL: "+e.GetBaseException().Message);return 1;}
     }
     private static async Task FramePublication(HostIdentity identity,int delay,bool accept){
+        using var signer=new SignedPeer();signer.Approve(identity);long epoch=identity.Trusted.PermissionFor(signer.PublicKey,new(true,0)).Generation;
         using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(6));var token=stop.Token;
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start(1);
         var written=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -70,8 +75,8 @@ internal static class SelfTest {
             using var client=new TcpClient();await client.ConnectAsync(IPAddress.Loopback,((IPEndPoint)listener.LocalEndpoint).Port,token);
             using var tls=new SslStream(client.GetStream(),false,(_,cert,_,_)=>cert!=null&&CryptographicOperations.FixedTimeEquals(SHA256.HashData(cert.GetRawCertData()),SHA256.HashData(identity.Certificate.RawData)));
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions{TargetHost="CatchWave",EnabledSslProtocols=SslProtocols.Tls12},token);
-            await Protocol.Write(tls,0,identity.Token,token);Packet format=await Protocol.Read(tls,token);await Protocol.Read(tls,token);Packet audio=await Protocol.Read(tls,token);await written.Task.WaitAsync(token);
-            await Protocol.Write(tls,3,Command(format.Body[..16],1,BinaryPrimitives.ReadInt64BigEndian(audio.Body),1),token);
+            await Protocol.Write(tls,0,signer.Auth(identity.Token),token);Packet format=await Protocol.Read(tls,token);await Protocol.Read(tls,token);Packet audio=await Protocol.Read(tls,token);await written.Task.WaitAsync(token);
+            await Protocol.Write(tls,3,signer.Sign(Command(format.Body[..16],1,BinaryPrimitives.ReadInt64BigEndian(audio.Body),1,epoch)),token);
             await arrived.Task.WaitAsync(token);await Task.WhenAny(decision.Task,Task.Delay(delay,token));
             Check(!decision.Task.IsCompleted,"command must wait for completed audio publication, not reject a frame already read by peer");
             release.TrySetResult();Packet ack;do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);
@@ -80,6 +85,8 @@ internal static class SelfTest {
         }finally{release.TrySetResult();stop.Cancel();listener.Stop();try{await server.WaitAsync(TimeSpan.FromSeconds(1));}catch{};}
     }
     private static async Task Session(HostIdentity identity,bool correct,CancellationToken token){
+        using var signer=new SignedPeer();signer.Approve(identity);
+        long Epoch(long generation)=>identity.Trusted.PermissionFor(signer.PublicKey,new(true,generation)).Generation;
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start(1);
         try {
             int port=((IPEndPoint)listener.LocalEndpoint).Port;
@@ -88,20 +95,20 @@ internal static class SelfTest {
             using var client=new TcpClient();await client.ConnectAsync(IPAddress.Loopback,port,token);
             using var tls=new SslStream(client.GetStream(),false,(_,cert,_,_)=>cert!=null&&CryptographicOperations.FixedTimeEquals(SHA256.HashData(cert.GetRawCertData()),SHA256.HashData(identity.Certificate.RawData)));
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions{TargetHost="CatchWave",EnabledSslProtocols=SslProtocols.Tls12},token);
-            await Protocol.Write(tls,0,correct?identity.Token:new byte[32],token);
+            await Protocol.Write(tls,0,correct?signer.Auth(identity.Token):new byte[32],token);
             if(!correct){try{await Protocol.Read(tls,token);throw new Exception("unauthenticated stream");}catch(EndOfStreamException){checks++;}}
             else {
                 Packet format=await Protocol.Read(tls,token);Check(format.Kind==1&&format.Body.Length==24&&BinaryPrimitives.ReadInt32BigEndian(format.Body.AsSpan(16))==48000,"authenticated format");
-                Packet policy=await Protocol.Read(tls,token);Check(policy.Kind==5&&policy.Body.SequenceEqual(Protocol.Policy(new(true,0))),"authenticated host policy");
+                Packet policy=await Protocol.Read(tls,token);Check(policy.Kind==5&&policy.Body.SequenceEqual(Protocol.Policy(new(true,Epoch(0)))),"authenticated host policy");
                 byte[] session=format.Body[..16];Packet audio=await Protocol.Read(tls,token);Check(audio.Kind==2&&audio.Body.Length==3856&&audio.Body.AsSpan(16).IndexOfAnyExcept((byte)0)<0,"synthetic PCM");
-                long observed=BinaryPrimitives.ReadInt64BigEndian(audio.Body);await Protocol.Write(tls,3,Command(session,1,observed,1),token);
+                long observed=BinaryPrimitives.ReadInt64BigEndian(audio.Body);await Protocol.Write(tls,3,signer.Sign(Command(session,1,observed,1,Epoch(0))),token);
                 Packet ack;do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);
                 Check(ack.Kind==4&&ack.Body[8]==1,"command accepted without sending key");
-                await Protocol.Write(tls,3,Command(session,1,observed,1),token);do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);Check(ack.Body[8]==0,"replay rejected on TLS");
+                await Protocol.Write(tls,3,signer.Sign(Command(session,1,observed,1,Epoch(0))),token);do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);Check(ack.Body[8]==0,"replay rejected on TLS");
                 for(int pass=0;pass<2;pass++){
                     Volatile.Write(ref allowed,pass);Volatile.Write(ref generation,pass+1);long previous=observed;
                     do{audio=await Protocol.Read(tls,token);if(audio.Kind==2)observed=BinaryPrimitives.ReadInt64BigEndian(audio.Body);}while(observed<previous+36);
-                    await Protocol.Write(tls,3,Command(session,pass+2,observed,1,pass+1),token);do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);
+                    await Protocol.Write(tls,3,signer.Sign(Command(session,pass+2,observed,1,Epoch(pass+1))),token);do{ack=await Protocol.Read(tls,token);}while(ack.Kind is 2 or 5);
                     Check(ack.Kind==4&&ack.Body[8]==pass,pass==0?"live PC control OFF rejects":"live PC control ON accepts");
                 }
             }

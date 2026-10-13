@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
 public final class Track {
+    static final int MATCH_TEXT_LIMIT=4096;
     private static final Pattern FEATURED=Pattern.compile("(?i)\\s*[\\[(]\\s*(?:feat\\.?|ft\\.?|featuring|за участю(?: виконавців)?|при участии)\\s+([^\\]\\)]+)[\\])]\\s*");
     private static final Pattern ARTIST_FEATURED=Pattern.compile("(?i)\\s+(?:feat\\.?|ft\\.?|featuring|за участю(?: виконавців)?|при участии)\\s+");
     private static final Pattern PRESENTATION=Pattern.compile("(?i)(?:\\s*[\\[(]\\s*(?:official audio|official video|official music video|lyrics|lyric video)\\s*(?:\\]|\\))|\\s+[|–—-]\\s*(?:official audio|official video|official music video|lyrics|lyric video))\\s*$");
@@ -26,6 +27,7 @@ public final class Track {
     /** Offset is usable. Catalog timeskew on one window is not a session verdict; SourceTimeline judges speed. */
     public boolean hasPosition() { return hasOffset()&&Double.isFinite(timeSkew); }
     public boolean matches(String actualTitle,String actualArtist) {
+        for(String value:new String[]{title,artist,actualTitle,actualArtist})if(value!=null&&value.length()>MATCH_TEXT_LIMIT)return false;
         if(normalize(artist).isEmpty()||normalize(actualArtist).isEmpty())return false;
         String expectedTitle=recordingTitle(title),candidateTitle=recordingTitle(actualTitle);
         // Do not equate remixes, live recordings, covers, slowed or sped-up versions.

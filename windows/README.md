@@ -1,6 +1,14 @@
 # CatchWave Windows Host
 
-Portable .NET 9 Windows desktop Host **0.1.32-desktop-usb**, compatible with Android **0.1.31-unified-ui/versionCode 49** source in this tree; the existing Android receiver works over LAN and USB-tethering IP without an APK update. It captures the default multimedia output with shared WASAPI loopback. Supported input: mono/stereo PCM at 44100/48000/96000 Hz, 16/24/32-bit integer or 32-bit float. Network output is PCM16 in 20 ms frames. No resampling or audio endpoint selector is implemented. Network selection is available in Host. A separate audio-driver development profile is included, but no virtual audio device is installed by the portable Host.
+Portable .NET 9 Windows desktop Host **0.1.47-auto-audio-format-beta**, paired with Android **0.1.47-beta/versionCode 72**. Choose an existing Windows playback output in **«Источник звука»**, or keep Windows multimedia default. Shared WASAPI loopback captures that exact endpoint through LAN or native USB. Windows' shared audio engine converts its native channel count/rate/sample format into PCM16 stereo 48 kHz in 20 ms frames, without changing device settings. The pilot's 192 kHz stereo32 Realtek output opened and was heard on Android. Source changes keep the current phone connection; a short capture gap is possible. Missing devices fail explicitly, without selecting another device. Network and audio source selection are independent. The separate CatchWave Output profile remains unsigned and is not installed by the portable Host. See [beta instructions](../docs/BETA-START-RU.md) and [release gates](../docs/PUBLIC-TEST.md).
+
+## Audio output selection
+
+Select **«Источник звука»** before connecting the phone. In Windows Sound settings or the per-app volume mixer, send the desired player to the same playback device. Choosing a capture source does not change Windows' default or per-app routes. A physically unused digital/virtual output can work when Windows still reports it ACTIVE; unplugged/disabled/missing endpoints remain visible but cannot be selected. Devices are refreshed each time the picker opens.
+
+The choice persists in `%LOCALAPPDATA%/CatchWave/audio-source.json`. It contains only a local endpoint ID and display name, never pairing or audio. Journals exclude those values. Selection is frozen from capture opening through cleanup; disconnect the phone before switching, then reconnect to the same Host. No Host restart/new QR is needed just to choose another source. A removed selected device fails explicitly and is never replaced by another output. Default mode resolves Windows multimedia default at each new audio session; it does not move a running stream after Windows changes the default.
+
+`dotnet CatchWave.Host.dll --audio-list` lists local outputs/states. `--audio-probe default` or `--audio-probe <list-index>` captures at most three seconds and prints only counters/format; it does not emit sound or save PCM. `--audio-self-test` uses fake sources and loopback TLS.
 
 ## Build
 
@@ -21,7 +29,7 @@ CatchWave.Host.exe --listen <PC-LAN-IPv4> --port 49372 --enable-media-keys
 
 Use an explicit local IPv4 address on a trusted LAN. No automatic firewall changes occur. If Windows asks for access, the owner chooses the intended private network. Scan the local QR in CatchWave and confirm. QR/CW1 contains a private token and pin: do not post, screenshot, log or pass it through ADB. The certificate is generated for the Host process and disposed on exit; no certificate trust entry is installed. Restarting requires fresh pairing.
 
-The documented launch command enables PC permission at startup. Without the override, the saved owner choice is used (OFF for a fresh preference file). Its owner-approved boolean is stored in `%LOCALAPPDATA%/CatchWave/host-control21.json`; no pairing token is stored there. Enable control on both sides. Revocation and key dispatch share a lock; policy generations reject older permission states. Dashboard phone output/sensor reports are authenticated counters, not measurements of audible sound.
+The documented launch command enables PC permission at startup. Without the override, the saved owner choice is used (OFF for a fresh preference file). Its boolean is stored in `%LOCALAPPDATA%/CatchWave/host-control21.json`; no pairing token is stored there. A new phone's control-key fingerprint must be approved separately after comparing it with Android Diagnostics. Approved public-key hashes are stored in a bounded private file; a QR alone cannot send commands. Enable control and activate the mode on Android. Signed commands, freshness and policy generations reject stale or foreign authority. Dashboard reports are counters, not measurements of audible sound.
 
 `--synthetic --disable-media-keys` sends zero PCM with no WASAPI capture and force-disabled Windows keys. It still creates an Android audio receiver and may take audio focus. `--enable-media-keys` is an explicit session override; normal use should use owner approval controls. No service, autostart, discovery, internet relay or firewall installer is included. Closing the Host window stops its listener and ends the session.
 
@@ -43,7 +51,11 @@ The native dark window shows connection/audio state and the independent control 
 
 The app opens without a console window. For terminal diagnostics use `dotnet CatchWave.Host.dll --help` or `dotnet CatchWave.Host.dll --self-test`. `dotnet CatchWave.Host.dll --ui-preview <directory>` renders the actual WinForms controls using an inert public QR fixture. Preview mode has no listener, WASAPI capture, real keys or saved preferences; its images are safe examples, not physical acceptance.
 
-## USB tethering and network selection
+## Native USB and network selection
+
+For native AOA/WinUSB cable audio, use **«Подключить по USB»** and the phone's USB action. No ADB or tethering carries that audio. Read [native USB setup and its fresh-install limitation](../docs/USB-SETUP.md) before testing. Android 0.1.44 learns the Host's Wi-Fi route after authenticated USB audio and can recover to it on unplug, with bounded retries. The old single-attempt transition was unreliable on the pilot; fresh acceptance of the new candidate is required.
+
+USB tethering remains an optional separate IP route:
 
 Connect the Android phone by USB-C and enable its existing USB tethering mode. Start Host with `--listen auto`: it prefers a recognized RNDIS/USB-NCM tethering adapter, falling back to an active private LAN IPv4 address. It binds one specific interface, never `0.0.0.0`. Hyper-V/virtual and link-local adapters are excluded from auto selection. An explicit `--listen <IPv4>` remains supported.
 
@@ -52,3 +64,7 @@ The connection button in Host lists current eligible interfaces. Selecting anoth
 Scan the Host QR in CatchWave as usual. The cable carries the IP/TLS audio stream through Windows' existing USB network driver; no ADB, new phone driver, USB-function replacement or home Wi-Fi is needed for this data path. Physical USB listening and cable reconnect still require device acceptance; loopback tests are not that acceptance.
 
 The window limits content width and height even when maximized, and uses one content container for pairing, commands and diagnostics. PC permission and phone gesture readiness are separate states. Changing the network never grants control permission or auto-activates Android gestures.
+
+## USB auto-pick in 0.1.45
+
+After successful USB authentication, Host remembers a bounded hash of that device configuration and physical port. On startup/device-change events it tries that already configured route once per cable attachment, with one session at a time. A new phone/configuration, multiple attached phones and driver installation retain explicit selection. An ended session on the attached cable does not create a retry loop. No serial or pairing data is logged. Changing USB mode/port can require one manual connection.
