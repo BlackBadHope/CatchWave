@@ -1,92 +1,139 @@
-# CatchWave
+<p align="center">
+  <img src="docs/media/hero.png" alt="CatchWave: Windows Host streaming audio to the Android app" width="100%">
+</p>
 
-Experimental Android music companion, with a Windows-to-Android LAN audio receiver and gesture remote.
+<p align="center">
+  <b>Your PC's sound on your phone.</b><br>
+  Stream Windows audio to Android over Wi-Fi or USB, control playback with gestures, and catch songs playing around you.
+</p>
 
-Current beta: **Android 0.1.47-beta, versionCode 72; Windows Host 0.1.47-auto-audio-format-beta**. [Download the matching beta](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta) and follow the [Russian tester quick start](docs/BETA-START-RU.md). Host saves the chosen existing Windows output and lets you change it during playback. Windows automatically converts its shared audio format to PCM16 stereo 48 kHz; the pilot heard a 192 kHz Realtek output on Android. Both apps use one dark green visual system. QR confirmation starts audio without another Connect tap; gesture activation uses only a button. Android uses a dedicated release signer with a verified update lineage from the previous pilot signer. Native USB has worked on the configured pilot; clean-device USB setup, notification attenuation and broader quality remain experimental. See [public test gates](docs/PUBLIC-TEST.md) and [signing policy](docs/ANDROID-SIGNING.md).
+<p align="center">
+  <a href="https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta"><img alt="Beta 0.1.47" src="https://img.shields.io/badge/beta-0.1.47-b9f66b?style=flat-square&labelColor=101510"></a>
+  <img alt="Free" src="https://img.shields.io/badge/price-free-b9f66b?style=flat-square&labelColor=101510">
+  <a href="LICENSE.txt"><img alt="GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0-b9f66b?style=flat-square&labelColor=101510"></a>
+  <img alt="Android 11+" src="https://img.shields.io/badge/Android-11%2B-b9f66b?style=flat-square&labelColor=101510">
+  <img alt="Windows 10/11 x64" src="https://img.shields.io/badge/Windows-10%2F11%20x64-b9f66b?style=flat-square&labelColor=101510">
+</p>
 
-This release includes asynchronous TLS disconnect/cancellation, protection against a late refresh restarting a stopped session, background audio/power handling, bounded clock correction and continuity across small frame gaps. A delayed first orientation sample now starts a fresh neutral-calibration window. Permission, freshness, posture and accidental-input guards remain enabled. Previous physical checks confirmed audible audio and commands on one phone; automated tests and short listening checks do not establish long-term wireless reliability, battery life or AudioRelay parity.
+---
 
-Download the Android APK and portable Windows Host from [Releases](https://github.com/BlackBadHope/CatchWave/releases). See [UI verification](design-qa.md) and [Windows setup](windows/README.md). This is an experimental prerelease.
+CatchWave is a free, open-source companion that turns an Android phone into a wireless speaker and remote for your Windows PC. No account, no ads, no analytics, no subscription. It is a hobby project, built slowly and with a lot of care for the small things: an encrypted, pinned connection; audio that steps aside for your calls and videos; gestures with guards against accidental input; and a diagnostics view that never records your audio.
 
-**Accidental-input warning:** ordinary handling can trigger commands while control is active. Turn it off outside deliberate use. Button activation has no timer or table-pose prerequisite. Pickup preserves tap commands; posture changes briefly rebase only the tilt axis. Nearly horizontal placement blocks repeated volume. Gesture reliability has not been benchmarked.
+> **Beta.** CatchWave is tested on Windows 11 with a OnePlus 12 (Android 16). Other phones, Bluetooth outputs and long sessions still need testers. See [known limitations](KNOWN_ISSUES.md).
 
-## Windows audio and gesture remote
+## See it in action
 
-The portable Windows Host captures a **selected existing Windows playback output**, or Windows multimedia default at session startup with WASAPI loopback and streams PCM over pinned TLS through Wi-Fi or native USB accessory transfers. Android plays it through its media output. LAN startup installs no driver, service, autostart entry, certificate trust or firewall rule. USB component setup is a separate explicit administrator action. A distinct CatchWave Output driver passed x64 WDK, INF/API and catalog signability checks; it is unsigned and has not been loaded or physically accepted. Its [development source and signing boundary](windows/driver/README.md) are separate from the portable app. AudioRelay feature/quality parity has not been established; AudioRelay code, binaries and private protocol are not used.
+<p align="center">
+  <img src="docs/media/demo.gif" alt="Short walkthrough: start the Host, scan the QR, music plays on the phone, gesture control, song recognition" width="760">
+</p>
+
+## What it does
+
+### 🔊 PC audio on your phone
+- **Wi-Fi or cable.** It streams over your local network or through native USB (Android Open Accessory + WinUSB). No ADB, no USB tethering, no root.
+- **Any Windows output.** You choose the output in the Host (speakers, monitor, headphones, or an existing virtual device) and can switch it during playback without reconnecting.
+- **Zero setup for formats.** Windows converts whatever the output uses (up to 192 kHz, multichannel) to 48 kHz stereo for the phone.
+- **Respects your phone.** A call or a video on the phone takes priority, and PC audio comes back afterwards. Notifications only lower the volume briefly.
+- **Recovers on its own.** If the cable is pulled, the stream moves to the same paired PC over Wi-Fi.
+
+### 👋 Gesture remote
+Control the PC without unlocking anything. Activate control with one button, hold the phone still for 1.5 s, then:
 
 | Gesture | Action |
 | --- | --- |
-| Tilt left/right and hold | Android media volume down/up; first step after 250 ms, then every 400 ms |
-| Return toward neutral | Stop held volume adjustment |
-| Shake, or 3 taps | Windows play/pause |
-| 4 taps | Windows next |
-| 5 taps | Windows previous |
-| 6 taps | Android media mute/restore |
+| Tilt left / right and hold | Phone volume down / up |
+| Shake, or 3 taps | Play / pause on the PC |
+| 4 taps | Next track |
+| 5 taps | Previous track |
+| 6 taps | Mute / restore the phone |
 
-Tilt entry is about 24 degrees, release about 15 degrees. Fresh stable sensor samples are required; missed samples do not queue delayed volume steps. Native Android steps determine the increment. Windows keys depend on the active player's supported actions. A command ACK confirms dispatch, not a successful player transition.
+Commands require a separate approval of the phone's key on the PC. A QR code grants audio only, never control.
 
-1. Build Android and Windows below. Install the APK yourself and launch CatchWave.
-2. On a trusted shared LAN, start `CatchWave.Host.exe --listen auto --port 49372 --enable-media-keys` (or an explicit PC IPv4 address). For cable audio see [native USB setup](docs/USB-SETUP.md); neither ADB nor USB tethering carries product audio.
-3. Open **«Звук с ПК»**, scan the locally displayed QR and confirm **«Подключить»**. Audio starts automatically. Grant Camera and Notifications if requested. Keep the QR private: it contains a session token and certificate pin. A Host restart needs fresh QR pairing or a successful new USB session.
-4. For media control, first approve this phone's control-key fingerprint in Host after comparing it with phone Diagnostics. A QR grants audio, not commands. Allow control on the phone, enable **«Разрешить жесты»** and press **«Активировать управление»**. No prior pose or turn is needed. Two short vibrations and an optional rising tone indicate activation. **«Выключить управление»** turns it off. There is no timer; position never activates or deactivates it. Permission, sensor and session faults still turn control off.
-5. Hold the phone still for 1.5 seconds once after activation to set neutral. For volume, hold its screen toward you, top edge up, then tilt slowly about 30 degrees and hold. Pickup and display changes keep tap commands ready; large posture changes briefly pause only volume and rebase its axis after 0.3 seconds of quiet. A nearly horizontal phone cannot repeat volume steps. **«Сбросить активацию и нейтраль»** turns control off and requires the button again. Tap gently 0.2–0.5 seconds apart, then pause at least 0.7 seconds after a series.
-6. Gestures normally require CatchWave to be visible. The optional **«Разрешить жесты при выключенном экране»** setting uses the running foreground service and a partial wake lock. Screen-off behavior and battery cost remain experimental. Use **«Отключиться»** to stop the Android session; close the Host to end its pairing session.
+### 🎵 Music around you
+- **Recognize nearby music.** Hear a song in a café or on someone else's speaker: CatchWave fingerprints a short microphone sample on the phone and identifies it.
+- **Continue in YouTube Music.** Playback opens in YouTube Music at the estimated moment of the song.
+- **Live Sync** (with headphones) keeps the position aligned.
 
-Start with comfortable phone media volume. Audio focus may pause another receiver such as AudioRelay. The owner accepts native installation, permission and firewall dialogs. Normal LAN use needs no ADB, root or access to the Windows player's notifications.
+### 🔒 Private by design
+- **Encrypted and pinned.** Audio and commands travel over TLS with the PC's certificate pinned by the QR scan.
+- **No CatchWave server.** There is no backend, no account, no advertising ID and no analytics.
+- **Nothing is installed behind your back.** The Windows Host is portable: no service, autostart, driver or firewall change for Wi-Fi use.
+- **Diagnostics without your audio.** Diagnostics keep at most 256 metadata events locally, with no audio, QR codes or track titles.
+- **Third parties, only where needed.** Recognition sends only the fingerprint to Shazam's catalog and searches YouTube; see [privacy](docs/PRIVACY.md).
 
-Phone audio has priority over an already connected CatchWave stream. Other media or calls pause PC output while keeping the connection; old PCM is discarded. Ordinary notification MAY_DUCK attenuates PC audio instead of pausing it. Transient full interruptions resume on Android's focus-gain callback. After permanent focus loss, CatchWave waits until it has observed phone audio and at least 750 ms of quiet, then requests focus again. It does not take focus from a player still loading its first audio. Manual **«Отключиться»** cancels the return. A real network failure still ends the session. OEM audio-focus and playback reporting behavior needs device testing.
+## Screenshots
 
-After authenticated USB audio, the app remembers that Host's advertised Wi-Fi route without another QR scan. Cable loss uses that same pinned Host. Temporary network failures get at most three retries within 20 seconds; manual disconnect cancels queued retries. PIN/certificate/protocol failures stop immediately. Reconnecting TLS/AudioTrack can leave a short gap; Wi-Fi must already be connected and reachable. An active VPN is preserved. Current physical acceptance is listed in [PUBLIC-TEST.md](docs/PUBLIC-TEST.md).
+<p align="center">
+  <img src="docs/media/gallery-phone.png" alt="Android app: home, PC audio with gestures, music recognition" width="100%">
+</p>
+<p align="center">
+  <img src="docs/media/gallery-host.png" alt="Windows Host: waiting for pairing with a private QR, and streaming with gestures ready" width="100%">
+</p>
 
-The phone and Host offer local diagnostic view/export: at most 256 events, timestamps/timezones, nonsecret session correlation, source/output/focus/route, frame counters and command/volume results. No audio, raw sensor vectors, QR, credentials, device names or track titles are recorded. See [diagnostics](docs/DIAGNOSTICS.md).
+<sub>The interface is in Russian. Captures come from the 0.1.3x interface; the audio-source picker and USB controls added in 0.1.4x are not shown yet. The QR shown is an inert public fixture.</sub>
 
-See [LAN setup](docs/LAN-SETUP.md), [Windows instructions](windows/README.md) and [validation](docs/VALIDATION-ARMING-FEEDBACK.md).
+## Get started in 3 minutes
 
-## Music recognition and handoff
+1. **Download** the APK and the portable Windows Host from the [latest release](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta).
+2. **On the PC:** unzip the Host and run `Start-CatchWave.cmd`. A private QR code appears. Allow the private network if Windows asks.
+3. **On the phone:** install the APK, open **«Звук с ПК» → «Сканировать QR»**, scan and confirm. Play something on the PC: you should hear it on the phone.
+4. *(Optional)* Approve the phone's key in the Host, enable **«Разрешить жесты»** and press **«Активировать управление»**.
 
-The original mode records a short microphone fragment, computes a fingerprint locally, sends it to Shazam recognition over HTTPS, and asks native YouTube Music to continue at the estimated position. The Shazam app is not required. Matching metadata does not guarantee the same remix/master/recording. Live Sync requires headphones and access to the YouTube Music media session. Microphone recognition and LAN receiving are separate modes.
+Step-by-step guides:
+- [Quick start for testers (Russian)](docs/BETA-START-RU.md)
+- [LAN setup](docs/LAN-SETUP.md)
+- [Native USB setup](docs/USB-SETUP.md)
 
-Recognition requires Microphone, internet and YouTube Music. Notification access is used for its media session; message notifications are not read. Optional acoustic refinement asks Android for screen/audio capture consent. Audio buffers remain in RAM. Fingerprints go to Shazam; title/artist searches go to YouTube. Those services see the network address. There is no CatchWave account, backend, advertising ID or analytics. LAN pairing preferences, finite failure/stage values and a bounded local diagnostic journal are stored privately on the phone. Windows saves its permission boolean and bounded metadata journal. See [known limitations](KNOWN_ISSUES.md).
+> **Tip:** turn gesture control off when you don't need it. Picking up or putting down the phone can be read as a gesture.
 
-## Compatibility
+## How it works
 
-| Platform or feature | Declared baseline | Physical validation |
-| --- | --- | --- |
-| Android | Android 11/API 30 minimum; target SDK 35, compile SDK 36; Java APK with no bundled native ABI libraries | OnePlus 12, Android 16/API 36 |
-| Windows Host | Windows desktop with .NET 9 Windows Desktop runtime; WinForms, WASAPI and user32 are required | Windows 11 x64, build 26200 |
-| Windows ARM64/x86 | No RID/architecture is pinned in the project; needs a matching runtime/apphost build | Not validated |
-| Linux/macOS | Can build Android sources with the SDK; no Host implementation | No audio/remote support implemented |
-| iOS | No client implementation | Not supported |
-
-These SDK/OS baselines do not certify other phone models or future Android releases. API 33 notification/typed parcel access, API 34 capture consent and API 31 privacy-sensitive capture calls are guarded; release lint checks the API 30 minimum. Windows support also depends on the runtime's current [official OS matrix](https://github.com/dotnet/core/blob/main/release-notes/9.0/supported-os.md); do not infer support for every Windows 10 edition or Server from the framework's capabilities. The accepted Windows build is x64; ARM64 needs separate testing.
-
-Audio receiving does not require gesture sensors. Gestures require both an accelerometer and gyroscope; absence or failed registration of either disables all gestures. Tilt prefers game rotation vector and falls back to ordinary rotation vector. Without either orientation vector, all commands stay locked because intentional arming cannot be established. Audio remains independent. A camera is optional for APK installation but required by the current QR-only pairing flow. The manifest requires a microphone because the original recognition mode remains included.
-
-Only the phone's built-in speaker route was used in the audio pilot. Android can route media to headphones/Bluetooth, but latency, fixed-volume behavior and route changes are not certified. OEM battery restrictions can stop background playback/sensors despite a foreground service and optional wake lock. Screen-off mode and sensor thresholds need device-specific checks; no battery whitelist or settings bypass is performed.
-
-## Build and verify
-
-Android requires JDK 17, SDK Platform 36 and Build Tools 36.0.0. Minimum Android: 11/API 30; compile SDK 36, target SDK 35. Gradle 8.11.1 is pinned by the wrapper; AGP 8.9.1. Set `ANDROID_HOME` or create untracked `local.properties` with `sdk.dir=...`.
-
-```powershell
-.\gradlew.bat --no-daemon :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
-# Windows helper: validates and copies the APK to ignored dist/.
-.\build.ps1 -Validate
+```mermaid
+flowchart LR
+  subgraph PC["Windows PC"]
+    A["Any app"] --> B["Windows output<br/>(your choice)"]
+    B -- "WASAPI loopback<br/>48 kHz stereo" --> H["CatchWave Host"]
+  end
+  subgraph Phone["Android phone"]
+    R["CatchWave app"] --> S["Speaker / headphones"]
+  end
+  H -- "PCM over pinned TLS<br/>Wi-Fi or USB" --> R
+  R -. "gesture commands<br/>(approved key only)" .-> H
+  H -. "media keys" .-> A
 ```
 
-Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release-unsigned.apk`. Release builds deliberately have no debug-key fallback. Distribution APKs are signed separately using `tools/Sign-Release.ps1` and a protected private profile; see [signing policy](docs/ANDROID-SIGNING.md). An independent build signed with another key cannot update the distributed app in place. Keys and passwords are never committed. Older Releases contain older versions.
+The Host captures the selected output with WASAPI loopback, cuts it into 20 ms frames and sends them over TLS. The phone plays them through `AudioTrack` and sends back gesture commands authenticated with its approved key. Details: [technical reference](docs/TECHNICAL.md).
 
-Windows needs Windows 10/11 and .NET 9 SDK/Windows Desktop runtime:
+## Requirements
+
+| | Supported | Tested on |
+| --- | --- | --- |
+| Phone | Android 11 or newer, camera for QR pairing; accelerometer, gyroscope and rotation sensor for gestures | OnePlus 12, Android 16 |
+| PC | Windows 10/11 x64 with .NET 9 Desktop Runtime | Windows 11 x64 |
+| Network | Phone and PC on the same trusted Wi-Fi/LAN, or a data USB cable | Home Wi-Fi, USB-C cable |
+
+iOS, macOS and Linux hosts are not supported.
+
+## Build from source
 
 ```powershell
+# Android (JDK 17, Android SDK 36)
+.\gradlew.bat --no-daemon :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+# Windows Host (.NET 9 SDK)
 .\windows\build.ps1 -Validate
 .\windows\test-interop.ps1
 ```
 
-Test modes use bounded loopback TLS, synthetic silence and fake media keys. They do not capture real audio, control a phone or display a live pairing QR. GitHub Actions runs these Android, Host and Java/.NET checks.
+Release APKs are signed separately; see the [signing policy](docs/ANDROID-SIGNING.md). More build notes are in the [technical reference](docs/TECHNICAL.md#build-and-verify).
 
-## License and contributions
+## Feedback and contributing
 
-**GPL-3.0-or-later**. Preserve [LICENSE.txt](LICENSE.txt), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SOURCE_PROVENANCE.txt](SOURCE_PROVENANCE.txt) and `LICENSES/`. Fingerprinting adapts SongRec via Audile. QR dependencies are ZXing Android Embedded/Core and QRCoder under their respective licenses; pinned public source URLs/hashes are in `third-party-source/provenance.json`.
+Bug reports and test results from other phones are the most valuable help right now. Use the built-in **Diagnostics → Export** on both sides and describe what you did. Please never share your live QR code, keys or personal audio. See [CONTRIBUTING.md](CONTRIBUTING.md) and [public test status](docs/PUBLIC-TEST.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Never publish private QR/pairing data, signing keys, tokens, private audio, full logcat or device identifiers. CatchWave is not affiliated with Google, YouTube, Apple, Shazam, SongRec, Audile or AudioRelay.
+## License
+
+CatchWave is free software under **GPL-3.0-or-later** ([LICENSE.txt](LICENSE.txt)).
+- **Credits:** fingerprinting adapts SongRec via Audile; QR codes use ZXing and QRCoder. See [third-party notices](THIRD_PARTY_NOTICES.md) and [source provenance](SOURCE_PROVENANCE.txt).
+- **Affiliation:** CatchWave is not affiliated with Google, YouTube, Apple, Shazam, SongRec, Audile or AudioRelay.
+
+<p align="center"><sub>Made with care, and quite a few tokens. 💚</sub></p>
