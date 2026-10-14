@@ -161,7 +161,7 @@ def demo():
         title("Your PC's sound on your phone", "Wi-Fi or USB · gesture remote · song recognition", ["Free", "Open source", "No account"]),
         scene("1 · Start CatchWave Host on Windows", "It shows a private QR code. Nothing is installed or left running in the background.",
               [("window", "windows-waiting-fixture.png", 700, (130, 30))]),
-        scene("2 · Open «Звук с ПК» and scan the QR", "One scan pins the PC's certificate: the stream is encrypted end to end.",
+        scene("2 · Open PC audio and scan the QR", "One scan pins the PC's certificate: the stream is encrypted end to end.",
               [("phone", "home.png", 420, (90, 16)), ("window", "windows-waiting-fixture.png", 520, (380, 60))]),
         scene("3 · Music plays on the phone", "Any Windows output, converted automatically to 48 kHz stereo.",
               [("window", "windows-ready.png", 620, (40, 50)), ("phone", "lan-ready.png", 420, (690, 16))]),

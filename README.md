@@ -70,7 +70,7 @@ Commands require a separate approval of the phone's key on the PC. A QR code gra
   <img src="docs/media/gallery-host.png" alt="Windows Host: waiting for pairing with a private QR, and streaming with gestures ready" width="100%">
 </p>
 
-<sub>These pictures are the Russian 0.1.47 captures. They already show the audio-source picker and the USB button. The downloadable v0.1.47-beta package matches them: its windows are Russian. Current source starts in English, and Russian is an in-app choice (immediate on the phone, next launch in the Host). The QR is an inert public fixture, not a live pairing code.</sub>
+<sub>These pictures are the current English interface, including the Host status title at full height. The downloadable v0.1.47-beta package is still the older Russian build, so its windows do not match. Russian remains an in-app choice (immediate on the phone, next Host launch). The QR is an inert public fixture. The recognition screen shows the sample title “Sample recording”.</sub>
 
 ## Get started in 3 minutes
 
