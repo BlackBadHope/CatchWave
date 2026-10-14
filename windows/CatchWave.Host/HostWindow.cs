@@ -77,7 +77,8 @@ internal sealed class HostWindow:Form {
         page.Controls.Add(columns,0,1);
         var left=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Margin=Padding.Empty,BackColor=HostCard.Fill};
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
+        // 28pt title. 48px clipped the line box, so descenders in English and Russian were cut off.
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute,72));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,90));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,94));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute,34));
@@ -336,6 +337,20 @@ internal sealed class HostWindow:Form {
         if(pairing.Visible&&(privacy.Height<privacy.GetPreferredSize(new Size(privacy.Width,0)).Height||picture.Height<picture.Image!.Height||picture.Width<picture.Image.Width))throw new Exception("QR or privacy text clipped");
         if(phone.Bottom>phone.Parent!.ClientSize.Height||diagnosticAction.Bottom>diagnosticAction.Parent!.ClientSize.Height)throw new Exception("Right column overflow");
         foreach(Control item in new Control[]{connection,controlStatus,controlHint,control,network,usb,audioOutput,audioHint})if(item.Right>item.Parent!.ClientSize.Width||item.Bottom>item.Parent.ClientSize.Height)throw new Exception("Main control clipped: "+item.GetType().Name);
+        // The status title is one line. Its row must hold the font, including descenders, in both languages.
+        int lineHeight=(int)Math.Ceiling(connection.Font.GetHeight())+6;
+        if(connection.ClientSize.Height<lineHeight)throw new Exception("Connection header clipped");
+        bool russian=L.Russian;
+        try{
+            var flags=TextFormatFlags.SingleLine|TextFormatFlags.NoPadding|TextFormatFlags.NoPrefix;
+            foreach(bool language in new[]{false,true}){
+                L.Russian=language;
+                foreach(string text in new[]{"Connect your phone","Checking pairing…","Starting audio…","Phone disconnected","Source unavailable","Sending audio","Silence from PC","Connection lost","Connecting…"}){
+                    Size measured=TextRenderer.MeasureText(L.T(text),connection.Font,new Size(int.MaxValue,int.MaxValue),flags);
+                    if(measured.Width>connection.ClientSize.Width||measured.Height>connection.ClientSize.Height)throw new Exception("Connection header does not fit: "+L.T(text));
+                }
+            }
+        }finally{L.Russian=russian;}
     }
     internal Bitmap RenderClient(){using var contentBitmap=new Bitmap(Controls[0].Width,Controls[0].Height);Controls[0].DrawToBitmap(contentBitmap,new Rectangle(Point.Empty,Controls[0].Size));var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height);using var graphics=Graphics.FromImage(bitmap);graphics.Clear(Surface);graphics.DrawImageUnscaled(contentBitmap,Controls[0].Location);return bitmap;}
     protected override void Dispose(bool disposing){if(disposing){timer.Dispose();networkMenu.Dispose();audioMenu.Dispose();cancellation.Dispose();model.Changed-=RefreshState;picture.Image=null;guide.Image=null;foreach(var asset in assets)asset.Dispose();}base.Dispose(disposing);}
