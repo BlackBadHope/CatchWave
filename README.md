@@ -70,14 +70,14 @@ Commands require a separate approval of the phone's key on the PC. A QR code gra
   <img src="docs/media/gallery-host.png" alt="Windows Host: waiting for pairing with a private QR, and streaming with gestures ready" width="100%">
 </p>
 
-<sub>The interface is in Russian. Captures come from the 0.1.3x interface; the audio-source picker and USB controls added in 0.1.4x are not shown yet. The QR shown is an inert public fixture.</sub>
+<sub>These pictures are the Russian 0.1.47 captures. They already show the audio-source picker and the USB button. The downloadable v0.1.47-beta package matches them: its windows are Russian. Current source starts in English, and Russian is an in-app choice (immediate on the phone, next launch in the Host). The QR is an inert public fixture, not a live pairing code.</sub>
 
 ## Get started in 3 minutes
 
-1. **Download** the APK and the portable Windows Host from the [latest release](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta).
-2. **On the PC:** unzip the Host and run `Start-CatchWave.cmd`. A private QR code appears. Allow the private network if Windows asks.
-3. **On the phone:** install the APK, open **«Звук с ПК» → «Сканировать QR»**, scan and confirm. Play something on the PC: you should hear it on the phone.
-4. *(Optional)* Approve the phone's key in the Host, enable **«Разрешить жесты»** and press **«Активировать управление»**.
+1. **Download** [CatchWave-Host-0.1.47-win-x64.zip](https://github.com/BlackBadHope/CatchWave/releases/download/v0.1.47-beta/CatchWave-Host-0.1.47-win-x64.zip) and [CatchWave-Android-0.1.47-code72.apk](https://github.com/BlackBadHope/CatchWave/releases/download/v0.1.47-beta/CatchWave-Android-0.1.47-code72.apk) from the [0.1.47 beta](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta). This package has no setup wizard.
+2. **On the PC:** extract the whole ZIP into one folder and open `CatchWave.Host.exe`. SmartScreen will say Windows protected your PC, because this beta is unsigned. Choose **More info → Run anyway**. If Windows asks about networks, allow private ones only. Do not open `Start-CatchWave.cmd`.
+3. **On the phone:** open the APK. If Android blocks it, allow installs for the browser or Files app from that prompt, then install over any older CatchWave. Open **Open PC audio** (**«Открыть звук с ПК»** in the release build) → **Scan QR code**, scan the code on the PC and confirm.
+4. *(Optional)* Approve the phone's key in the Host, turn on **Allow gestures** (**«Разрешить жесты»**) and press **Activate control** (**«Активировать управление»**).
 
 Step-by-step guides:
 - [Quick start for testers (Russian)](docs/BETA-START-RU.md)
