@@ -13,8 +13,10 @@ internal static class SelfTest {
     private static byte[] Command(byte[] session,long sequence,long observed,byte action,long generation=0){byte[] b=new byte[41];session.CopyTo(b,0);BinaryPrimitives.WriteInt64BigEndian(b.AsSpan(16),sequence);BinaryPrimitives.WriteInt64BigEndian(b.AsSpan(24),observed);b[32]=action;BinaryPrimitives.WriteInt64BigEndian(b.AsSpan(33),generation);return b;}
     internal static async Task<int> Run(string? qrFixture=null){
         try {
-            checks+=HostUiTest.Run();
-            checks+=AudioSourceTest.Run();
+            // These suites assert the Russian UI text; English is covered by LanguageTest.
+            bool language=L.Russian;L.Russian=true;
+            try{checks+=HostUiTest.Run();checks+=AudioSourceTest.Run();}finally{L.Russian=language;}
+            checks+=LanguageTest.Run();
             checks+=await UsbTest.Run();
             checks+=await NetworkTest.Run();
             checks+=DiagnosticTest.Run();

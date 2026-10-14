@@ -177,7 +177,7 @@ internal static class Program {
         }catch(IOException e){window.UsbMessage(e.Message);}};}
         try{server.Select(address,port).GetAwaiter().GetResult();window.ConfigureNetworks(chosen,async next=>{await server.Select(next.Address,port);state.Listening();},a=>identity.PairCode(a,port),HostNetwork.Available,port);window.ConfigureUsb(usbAuto.Manual,()=>usb.Running);Application.Run(window);}
         finally{usbAuto.Dispose();diagnostics.Event("STOP","OWNER_CLOSED_HOST");stop.Cancel();usb.DisposeAsync().AsTask().GetAwaiter().GetResult();server.DisposeAsync().AsTask().GetAwaiter().GetResult();}return 0;
-        }catch(SocketException e)when(e.SocketErrorCode==SocketError.AddressAlreadyInUse){MessageBox.Show("CatchWave Host уже работает на этом адресе. Перед запуском новой версии закройте его текущее окно.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Information);return 2;}
-        catch(Exception e)when(e is ArgumentException or SocketException){Console.Error.WriteLine("Host address unavailable. Use --listen auto or an active IPv4 address.");MessageBox.Show("Не удалось открыть адрес Host. Подключите USB-модем или локальную сеть и запустите ярлык снова.","CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 2;}
+        }catch(SocketException e)when(e.SocketErrorCode==SocketError.AddressAlreadyInUse){MessageBox.Show(L.T("CatchWave Host is already running at this address. Close its current window before starting the new version."),"CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Information);return 2;}
+        catch(Exception e)when(e is ArgumentException or SocketException){Console.Error.WriteLine("Host address unavailable. Use --listen auto or an active IPv4 address.");MessageBox.Show(L.T("Could not open the Host address. Connect USB tethering or a local network and launch the shortcut again."),"CatchWave",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 2;}
     }
 }

@@ -28,14 +28,14 @@ final class GestureArming {
         if(!Double.isFinite(norm)||norm<.5||norm>1.5||!Double.isFinite(gyro)||!Double.isFinite(accelNorm)||now<=last){clear("INVALID_SENSOR");return;}
         last=now;
     }
-    synchronized String label(long now){return !allowed?"Управление выключено":active(now)?"Управление активировано — без таймера":"Режим выключен — нажмите «Активировать управление»";}
+    synchronized String label(long now){return !allowed?L.t("Control is off"):active(now)?L.t("Control activated — no timer"):L.t("Mode is off — press «Activate control»");}
     synchronized String explanation(){return switch(reason){
-        case "ARMED" -> "Режим включён кнопкой; положение телефона его не выключает";
-        case "DISPLAY_NEUTRAL" -> "Активация сохранена; направление наклонов соответствует экрану";
-        case "MANUAL_NEUTRAL" -> "Активация сброшена кнопкой; нажмите «Активировать управление»";
-        case "MANUAL_OFF" -> "Режим выключен кнопкой; звук с ПК продолжается";
-        case "SENSOR_GAP","SENSOR_STALE","GYRO_STALE","ACCEL_STALE","DEPENDENCY_STALE","SENSOR_ACCURACY","INVALID_SENSOR" -> "Режим выключен: датчики недостоверны или измерения задержались ("+reason+")";
-        case "PERMISSION_CHANGE" -> "Разрешение изменилось: нужна новая активация кнопкой";
-        default -> "Для управления нажмите «Активировать управление»";
+        case "ARMED" -> L.t("Mode turned on by the button; phone position does not turn it off");
+        case "DISPLAY_NEUTRAL" -> L.t("Activation kept; tilt direction follows the screen");
+        case "MANUAL_NEUTRAL" -> L.t("Activation reset by the button; press «Activate control»");
+        case "MANUAL_OFF" -> L.t("Mode turned off by the button; PC audio continues");
+        case "SENSOR_GAP","SENSOR_STALE","GYRO_STALE","ACCEL_STALE","DEPENDENCY_STALE","SENSOR_ACCURACY","INVALID_SENSOR" -> L.t("Mode is off: sensors are unreliable or readings are delayed (")+reason+")";
+        case "PERMISSION_CHANGE" -> L.t("Permission changed: activate again with the button");
+        default -> L.t("To control, press «Activate control»");
     };}
 }

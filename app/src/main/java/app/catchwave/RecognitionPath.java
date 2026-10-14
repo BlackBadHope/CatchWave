@@ -12,11 +12,11 @@ final class RecognitionPath {
     static boolean requiresShazamApp(){return false;}
     static boolean requiresYoutubeMusicApp(){return true;}
     static String explanation(){
-        return "Обработка музыки — на этом телефоне: микрофон и звуковой отпечаток считаются здесь. "
-            +"Приложение Shazam не нужно, не ставится и не открывается.\n\n"
-            +"Чтобы узнать название и секунду внутри записи, отпечаток сверяется с каталогом в интернете. "
-            +"Встроенной базы всех песен у Android нет: ни Pixel Now Playing, ни другой системный API "
-            +"не отдаёт стороннему приложению таймкод для перемотки.\n\n"
-            +"YouTube Music — выбранный плеер, чтобы продолжить слушать. Это не распознаватель.";
+        return L.t("Music processing happens on this phone: the microphone and audio fingerprint are computed here. ")
+            +L.t("The Shazam app is not needed, installed or opened.\n\n")
+            +L.t("To find the title and the second within the recording, the fingerprint is matched against an online catalog. ")
+            +L.t("Android has no built-in database of all songs: neither Pixel Now Playing nor any other system API ")
+            +L.t("gives a third-party app a timecode for seeking.\n\n")
+            +L.t("YouTube Music is the chosen player to keep listening. It is not the recognizer.");
     }
 }

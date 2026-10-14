@@ -26,7 +26,7 @@ public class SensorIntegrationTest {
     static final double C=Math.sqrt(.5);
     static void set(Object target,String name,Object value)throws Exception{Field f=target.getClass().getDeclaredField(name);f.setAccessible(true);f.set(target,value);}
     static Object get(Object target,String name)throws Exception{Field f=target.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(target);}
-    @Before public void setup()throws Exception{
+    @Before public void setup()throws Exception{L.set(org.robolectric.RuntimeEnvironment.getApplication(),true);
         ShadowSystemClock.advanceBy(Duration.ofMillis(1000));
         life=Robolectric.buildService(LanAudioService.class).create();service=life.get();settings=new LanSettings(service);
         settings.prefs.edit().clear().putBoolean("explicitControlUi21",true).putBoolean("gestures",true).putBoolean("activationSound",false).putBoolean("screenOff",false).putBoolean("resume",true).commit();settings.hostControl(true);

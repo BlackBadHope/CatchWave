@@ -53,9 +53,9 @@ public class CoreTest {
         assertTrue(RecognitionPath.requiresYoutubeMusicApp());
         assertEquals("com.google.android.apps.youtube.music",MediaBridge.PACKAGE);
         assertFalse(MediaBridge.PACKAGE.equals(RecognitionPath.SHAZAM_APP));
-        assertTrue(RecognitionPath.explanation().contains("Приложение Shazam не нужно"));
-        assertTrue(RecognitionPath.explanation().contains("YouTube Music — выбранный плеер"));
-        assertTrue(Privacy.notice().contains("не приложение Shazam"));
+        assertTrue(RecognitionPath.explanation().contains("The Shazam app is not needed"));
+        assertTrue(RecognitionPath.explanation().contains("YouTube Music is the chosen player"));
+        assertTrue(Privacy.notice().contains("not the Shazam app"));
     }
     @Test public void signatureHasCorrectLengthChecksumAndSampleRate(){byte[] data=Base64.getDecoder().decode(Fingerprint.generate(new short[96000]).split(",",2)[1]);ByteBuffer b=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);assertEquals(0xcafe2580,b.getInt());assertEquals(data.length-48,b.getInt(8));assertEquals(3<<27,b.getInt(28));assertEquals(99840,b.getInt(40));CRC32 crc=new CRC32();crc.update(data,8,data.length-8);assertEquals((int)crc.getValue(),b.getInt(4));}
 }

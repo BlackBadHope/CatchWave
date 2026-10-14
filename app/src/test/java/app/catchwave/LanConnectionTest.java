@@ -17,7 +17,7 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class) @Config(sdk=35)
 public class LanConnectionTest {
     private LanSettings settings;private final LanState state=LanState.INSTANCE;
-    @Before public void setup(){settings=new LanSettings(RuntimeEnvironment.getApplication());settings.prefs.edit().clear().commit();state.started=false;state.reset(settings);SessionModel.INSTANCE.running=false;SessionModel.INSTANCE.measuringAudio=false;}
+    @Before public void setup(){L.set(org.robolectric.RuntimeEnvironment.getApplication(),true);settings=new LanSettings(RuntimeEnvironment.getApplication());settings.prefs.edit().clear().commit();state.started=false;state.reset(settings);SessionModel.INSTANCE.running=false;SessionModel.INSTANCE.measuringAudio=false;}
     @After public void cleanup(){state.started=false;state.reset(settings);settings.prefs.edit().clear().commit();Shadows.shadowOf(Looper.getMainLooper()).idle();}
     private void pair(){String zero="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";settings.pair("CW1/192.0.2.1/49372/"+zero+"/"+zero);}
     private Object field(Activity a,String name)throws Exception{Field f=a.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(a);}

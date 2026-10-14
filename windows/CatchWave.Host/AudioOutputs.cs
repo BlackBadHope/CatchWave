@@ -7,10 +7,10 @@ internal sealed record AudioOutput(string Id, string Name, uint State, bool IsDe
     internal bool Active => State == 1;
     internal string Availability => State switch
     {
-        1 => "доступен", 2 => "выключен в Windows", 4 => "устройство отсутствует",
-        8 => "не подключён", _ => "недоступен"
+        1 => L.T("available"), 2 => L.T("disabled in Windows"), 4 => L.T("device missing"),
+        8 => L.T("not connected"), _ => L.T("unavailable")
     };
-    public override string ToString() => Name + (Active ? IsDefault ? " · Windows по умолчанию" : "" : " · " + Availability);
+    public override string ToString() => Name + (Active ? IsDefault ? L.T(" · Windows default") : "" : " · " + Availability);
 }
 
 /** Read-only MMDevice access. Names/IDs are local UI data, never diagnostic journal fields. */
@@ -60,7 +60,7 @@ internal static class AudioOutputs
         }
         catch (COMException) { }
         finally { PropVariantClear(ref value); if (properties != null) Marshal.ReleaseComObject(properties); }
-        return "Аудиовыход " + (index + 1);
+        return L.T("Audio output ") + (index + 1);
     }
     private static void Check(int hr) => Marshal.ThrowExceptionForHR(hr);
     [DllImport("ole32.dll")] private static extern int PropVariantClear(ref AudioPropVariant value);

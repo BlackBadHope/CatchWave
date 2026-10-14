@@ -5,7 +5,7 @@ namespace CatchWave.Host;
 
 internal sealed record AudioChoice(string? Id, string Name)
 {
-    internal static readonly AudioChoice Default = new(null, "Windows по умолчанию");
+    internal static readonly AudioChoice Default = new(null, L.T("Windows default"));
     internal bool Valid => Id == null || Id.Length is > 0 and <= 1024 && !Id.Any(char.IsControl)
         && Name is { Length: > 0 and <= 160 } && !Name.Any(char.IsControl);
 }
@@ -61,10 +61,10 @@ internal sealed class HostAudioSource
         {
             lock (gate)
             {
-                if (saveFailed) return "Выбор не сохранён; действует до закрытия Host.";
-                if (state == "SOURCE_FORMAT_UNSUPPORTED") return "Windows не смогла подготовить звук этого выхода. Выберите другой.";
-                if (state == "SOURCE_UNAVAILABLE" || availability != "") return "Источник недоступен" + (availability == "" ? "." : ": " + availability + ".") + " Выберите другой выход.";
-                return LiveSwitch ? "Источник можно менять без переподключения телефона." : leases > 0 ? "Для смены источника отключите телефон." : "Направьте звук Windows на этот же выход.";
+                if (saveFailed) return L.T("Choice not saved; it applies until the Host is closed.");
+                if (state == "SOURCE_FORMAT_UNSUPPORTED") return L.T("Windows could not prepare audio for this output. Choose another one.");
+                if (state == "SOURCE_UNAVAILABLE" || availability != "") return L.T("Source unavailable") + (availability == "" ? "." : ": " + availability + ".") + L.T(" Choose another output.");
+                return LiveSwitch ? L.T("The source can be changed without reconnecting the phone.") : leases > 0 ? L.T("Disconnect the phone to change the source.") : L.T("Send Windows audio to this same output.");
             }
         }
     }
@@ -73,7 +73,7 @@ internal sealed class HostAudioSource
         lock (gate)
         {
             var output = selected.Id == null ? outputs.FirstOrDefault(value => value.IsDefault) : outputs.FirstOrDefault(value => value.Id == selected.Id);
-            availability = output?.Active == true ? "" : output?.Availability ?? "выход отсутствует";
+            availability = output?.Active == true ? "" : output?.Availability ?? L.T("output missing");
         }
     }
     internal bool Select(AudioOutput? output)

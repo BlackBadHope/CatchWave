@@ -76,9 +76,9 @@ public class MediaBridge {
         MediaController c=controller();MediaMetadata m=c==null?null:c.getMetadata();PlaybackState p=c==null?null:c.getPlaybackState();
         AudioManager am=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
         StringBuilder outputs=new StringBuilder();for(AudioDeviceInfo d:am.getDevices(AudioManager.GET_DEVICES_OUTPUTS))outputs.append(d.getType()).append(' ');
-        return "YTM: "+(m==null?"нет метаданных":m.getDescription())+"\nPlaybackState: "+p+"\nДоступные выходы (типы): "+outputs+
+        return "YTM: "+(m==null?L.t("no metadata"):m.getDescription())+"\nPlaybackState: "+p+L.t("\nAvailable outputs (types): ")+outputs+
             "\nMedia volume: "+am.getStreamVolume(AudioManager.STREAM_MUSIC)+"/"+am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)+
-            "\nПоправка: "+context.getSharedPreferences("settings",Context.MODE_PRIVATE).getInt("adjustment",0)+" мс\nnow="+android.os.SystemClock.elapsedRealtime();
+            L.t("\nCorrection: ")+context.getSharedPreferences("settings",Context.MODE_PRIVATE).getInt("adjustment",0)+L.t(" ms\nnow=")+android.os.SystemClock.elapsedRealtime();
     }
     public static boolean headphones(Context context) {
         return headphonesForTypes(mediaOutputTypes(context));
@@ -117,7 +117,7 @@ public class MediaBridge {
             if(next==0||(category!=0&&category!=next)){category=0;break;}
             category=next;
         }
-        return "Системный выход: "+(category==1?"динамик":category==2?"проводные наушники":category==3?"Bluetooth":"неизвестен");
+        return L.t("System output: ")+(category==1?L.t("speaker"):category==2?L.t("wired headphones"):category==3?"Bluetooth":L.t("unknown"));
     }
     private static int outputCategory(int type) {
         switch(type){

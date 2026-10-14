@@ -26,56 +26,56 @@ public final class AudioCalibrationService extends Service {
     private boolean ownsMeasurement;
     private final MediaProjection.Callback revoked=new MediaProjection.Callback(){@Override public void onStop(){cancelled.set(true);if(worker!=null)worker.interrupt();}};
 
-    @Override public int onStartCommand(Intent intent,int flags,int startId){
+    @Override public int onStartCommand(Intent intent,int flags,int startId){L.init(this);
         if(intent==null||STOP.equals(intent.getAction())){cancelled.set(true);if(worker!=null)worker.interrupt();else stopSelf();return START_NOT_STICKY;}
         if(worker!=null)return START_NOT_STICKY;
         Intent consent=Build.VERSION.SDK_INT>=33?intent.getParcelableExtra("consent",Intent.class):intent.getParcelableExtra("consent");
         controller=new MediaBridge(this).controller();target=new CalibrationTarget(controller,model.track);
         if(consent==null||intent.getIntExtra("result",0)!=Activity.RESULT_OK||!target.valid(controller,model)){
-            model.record("Уточнение звука: нет разрешения или выбранный трек уже изменился");stopSelf();return START_NOT_STICKY;
+            model.record(L.t("Sound refinement: no permission, or the selected track has already changed"));stopSelf();return START_NOT_STICKY;
         }
         try{
             NotificationManager nm=getSystemService(NotificationManager.class);
-            nm.createNotificationChannel(new NotificationChannel("audio_alignment","Уточнение по звуку",NotificationManager.IMPORTANCE_LOW));
+            nm.createNotificationChannel(new NotificationChannel("audio_alignment",L.t("Sound refinement"),NotificationManager.IMPORTANCE_LOW));
             PendingIntent open=PendingIntent.getActivity(this,21,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
             PendingIntent stop=PendingIntent.getService(this,22,new Intent(this,AudioCalibrationService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
-            Notification notification=new Notification.Builder(this,"audio_alignment").setSmallIcon(R.drawable.ic_wave).setContentTitle("Сравниваю звук")
-                .setContentText("Микрофон и внутренний звук YouTube Music · до 30 секунд").setContentIntent(open).setOngoing(true)
-                .addAction(new Notification.Action.Builder(null,"Отменить",stop).build()).build();
+            Notification notification=new Notification.Builder(this,"audio_alignment").setSmallIcon(R.drawable.ic_wave).setContentTitle(L.t("Comparing audio"))
+                .setContentText(L.t("Microphone and YouTube Music internal audio · up to 30 seconds")).setContentIntent(open).setOngoing(true)
+                .addAction(new Notification.Action.Builder(null,L.t("Cancel"),stop).build()).build();
             startForeground(21,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE|ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
             projection=getSystemService(MediaProjectionManager.class).getMediaProjection(Activity.RESULT_OK,consent);
-            if(projection==null)throw new IllegalStateException("Android не предоставил захват звука");
+            if(projection==null)throw new IllegalStateException(L.t("Android did not grant audio capture"));
             projection.registerCallback(revoked,main);
             volume=new CaptureVolume(getSystemService(AudioManager.class));
-            if(!volume.mute())throw new IllegalStateException("Не удалось выключить динамик телефона");
+            if(!volume.mute())throw new IllegalStateException(L.t("Could not mute the phone speaker"));
             wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"CatchWave:audioCompare");wake.acquire(35000);
             ownsMeasurement=true;model.measuringAudio=true;model.audioLagMs=Double.NaN;model.audioVerified=false;
-            model.update("Сравниваю звук · динамик выключен","Внешняя музыка должна играть непрерывно. Запись остаётся в памяти телефона.");
+            model.update(L.t("Comparing audio · speaker muted"),L.t("The external music must keep playing. The recording stays in the phone's memory."));
             deadline=SystemClock.elapsedRealtime()+30000;
             worker=new Thread(this::measure,"CatchWave-audio-compare");worker.start();
-        }catch(Exception failure){model.update("Уточнение по звуку недоступно",message(failure));stopSelf();}
+        }catch(Exception failure){model.update(L.t("Sound refinement unavailable"),message(failure));stopSelf();}
         return START_NOT_STICKY;
     }
     private void measure(){
-        String result="Измерение отменено";
+        String result=L.t("Measurement cancelled");
         try{
             int uid=getPackageManager().getApplicationInfo(MediaBridge.PACKAGE,0).uid;
             AudioCorrection correction=new AudioCorrection();
             boolean storedLag=false;
-            model.record("Уточнить по звуку: старт захвата; seek_lag="+(model.seekLagMs==Long.MIN_VALUE?"—":Long.toString(model.seekLagMs)));
+            model.record(L.t("Refine by sound: capture started; seek_lag=")+(model.seekLagMs==Long.MIN_VALUE?"—":Long.toString(model.seekLagMs)));
             Thread.sleep(350);
             for(int pass=0;pass<3;pass++){
                 check();
-                if(CalibrationTarget.duration(controller)-CalibrationTarget.position(controller)<9000)throw new IllegalStateException("До конца записи мало времени — повтори на следующей песне");
+                if(CalibrationTarget.duration(controller)-CalibrationTarget.position(controller)<9000)throw new IllegalStateException(L.t("Too little time left in the recording — try again on the next song"));
                 Capture[] pair=capture(uid);
                 check();
                 AudioAlignment.Estimate estimate=AudioAlignment.compare(pair[0].data,pair[0].anchor,pair[1].data,pair[1].anchor);
-                model.record(String.format(Locale.ROOT,"Аудиозамер %d: refRms=%.5f micRms=%.5f anchors=%d/%d lag=%.2f ms confidence=%.2f windows=%.2f ms valid=%s",pass+1,rms(pair[0].data),rms(pair[1].data),pair[0].anchor,pair[1].anchor,estimate.lagMs,estimate.confidence,estimate.windowDifferenceMs,estimate.valid));
+                model.record(String.format(Locale.ROOT,L.t("Audio measurement %d: refRms=%.5f micRms=%.5f anchors=%d/%d lag=%.2f ms confidence=%.2f windows=%.2f ms valid=%s"),pass+1,rms(pair[0].data),rms(pair[1].data),pair[0].anchor,pair[1].anchor,estimate.lagMs,estimate.confidence,estimate.windowDifferenceMs,estimate.valid));
                 if(!estimate.valid){
-                    if(rms(pair[0].data)<.001)throw new IllegalStateException("Внутренний звук недоступен или тихий. YouTube Music либо Android могут ограничивать захват при нулевой громкости.");
-                    if(rms(pair[1].data)<.0008)throw new IllegalStateException("Микрофон почти не слышит внешнюю музыку. Поднеси телефон ближе.");
-                    if(pass==2)throw new IllegalStateException("Два фрагмента не дали однозначного совпадения. Проверь версию песни и непрерывное воспроизведение.");
-                    model.record("Уточнить по звуку: окно не однозначно, повторяю");
+                    if(rms(pair[0].data)<.001)throw new IllegalStateException(L.t("Internal audio is unavailable or too quiet. YouTube Music or Android may limit capture at zero volume."));
+                    if(rms(pair[1].data)<.0008)throw new IllegalStateException(L.t("The microphone can barely hear the external music. Move the phone closer."));
+                    if(pass==2)throw new IllegalStateException(L.t("Two fragments did not give an unambiguous match. Check the song version and continuous playback."));
+                    model.record(L.t("Refine by sound: window ambiguous, retrying"));
                     continue;
                 }
                 model.audioLagMs=estimate.lagMs;
@@ -83,15 +83,15 @@ public final class AudioCalibrationService extends Service {
                     int next=(int)Math.max(-1200,Math.min(1200,getSharedPreferences("settings",MODE_PRIVATE).getInt("audio_lag_ms",0)+Math.round(estimate.lagMs)));
                     getSharedPreferences("settings",MODE_PRIVATE).edit().putInt("audio_lag_ms",next).apply();
                     storedLag=true;
-                    model.record("Сохранена акустическая поправка "+next+" мс для следующего подхвата");
+                    model.record(L.t("Saved acoustic correction ")+next+L.t(" ms for the next handoff"));
                 }
-                if(Math.abs(estimate.lagMs)<=15){model.audioVerified=true;result=String.format(Locale.ROOT,"Внутренний звук совпал: %+.1f мс. Задержка самого динамика сюда не входит.",estimate.lagMs);break;}
-                if(pass==2){result=String.format(Locale.ROOT,"После двух поправок осталось %+.1f мс. Точное совпадение не подтверждено; дальнейшую перемотку остановил.",estimate.lagMs);break;}
+                if(Math.abs(estimate.lagMs)<=15){model.audioVerified=true;result=String.format(Locale.ROOT,L.t("Internal audio matched: %+.1f ms. The speaker's own latency is not included."),estimate.lagMs);break;}
+                if(pass==2){result=String.format(Locale.ROOT,L.t("After two corrections %+.1f ms remain. An exact match was not confirmed; further seeking stopped."),estimate.lagMs);break;}
                 long advance=correction.nextAdvance(estimate.lagMs),position=CalibrationTarget.position(controller),to=position+advance;
-                if(position<0||to<0||to>=CalibrationTarget.duration(controller)-9000)throw new IllegalStateException("Поправка выходит за доступный фрагмент записи");
+                if(position<0||to<0||to>=CalibrationTarget.duration(controller)-9000)throw new IllegalStateException(L.t("The correction falls outside the available recording"));
                 check();
                 long requested=SystemClock.elapsedRealtime();controller.getTransportControls().seekTo(to);
-                model.record("Аудиопоправка: "+advance+" мс; seekTo="+to);
+                model.record(L.t("Audio correction: ")+advance+L.t(" ms; seekTo=")+to);
                 model.audioLagMs=Double.NaN;
                 boolean acknowledged=false;
                 long settledSession=-1,sessionUpdateAt=-1;
@@ -100,33 +100,33 @@ public final class AudioCalibrationService extends Service {
                     long session=CalibrationTarget.position(controller);
                     if(p.getLastPositionUpdateTime()>=requested&&Math.abs(session-(to+SystemClock.elapsedRealtime()-requested))<=180){acknowledged=true;settledSession=session;sessionUpdateAt=p.getLastPositionUpdateTime();break;}
                 }
-                if(!acknowledged)throw new IllegalStateException("YouTube Music не подтвердил перемотку. Повторную поправку не применяю.");
+                if(!acknowledged)throw new IllegalStateException(L.t("YouTube Music did not confirm the seek. Not applying another correction."));
                 long tEst=model.track==null?-1:model.track.positionAt(SystemClock.elapsedRealtime(),0);
                 long lag=SeekClock.lag(requested,sessionUpdateAt);
                 model.record("t_est="+tEst+" t_session_after_seek="+settledSession+" Δ="+(tEst<0?"—":Long.toString(SeekClock.delta(tEst,settledSession)))+" seek_lag="+lag);
                 Thread.sleep(650);
             }
-        }catch(InterruptedException ignored){result="Измерение отменено. Громкость восстановлена, если ты её не менял.";}
+        }catch(InterruptedException ignored){result=L.t("Measurement cancelled. Volume restored unless you changed it.");}
         catch(Exception failure){result=message(failure);}
         finally{
             String detail=result;
             main.post(()->{
                 boolean owned=ownsMeasurement;
                 cleanup();
-                if(owned){model.record("Уточнить по звуку: итог verified="+model.audioVerified+" lag="+(Double.isFinite(model.audioLagMs)?String.format(Locale.ROOT,"%.1f",model.audioLagMs):"—")+" · "+detail);
-                    if(model.running&&model.guardingTrack)model.update(model.audioVerified?"Звук сопоставлен":"Уточнение завершено",detail);}
+                if(owned){model.record(L.t("Refine by sound: result verified=")+model.audioVerified+" lag="+(Double.isFinite(model.audioLagMs)?String.format(Locale.ROOT,"%.1f",model.audioLagMs):"—")+" · "+detail);
+                    if(model.running&&model.guardingTrack)model.update(model.audioVerified?L.t("Audio matched"):L.t("Refinement complete"),detail);}
                 stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
             });
         }
     }
     private void check()throws InterruptedException{
         if(cancelled.get()||Thread.currentThread().isInterrupted())throw new InterruptedException();
-        if(SystemClock.elapsedRealtime()>deadline)throw new IllegalStateException("Лимит измерения 30 секунд исчерпан");
-        if(!target.valid(controller,model))throw new IllegalStateException("Воспроизведение изменилось. Уточнение остановлено, чтобы не перематывать другую запись.");
-        if(!volume.muted())throw new IllegalStateException("Громкость изменена вручную. Уточнение остановлено.");
+        if(SystemClock.elapsedRealtime()>deadline)throw new IllegalStateException(L.t("The 30-second measurement limit was reached"));
+        if(!target.valid(controller,model))throw new IllegalStateException(L.t("Playback changed. Refinement stopped so another recording is not seeked."));
+        if(!volume.muted())throw new IllegalStateException(L.t("Volume changed manually. Refinement stopped."));
     }
     private Capture[] capture(int uid)throws Exception{
-        if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)throw new SecurityException("Разрешение микрофона отключено");
+        if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)throw new SecurityException(L.t("Microphone permission is off"));
         AudioFormat format=new AudioFormat.Builder().setSampleRate(16000).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
         int buffer=Math.max(32000,AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)*4);
         AudioRecord reference=null,mic=null;
@@ -139,7 +139,7 @@ public final class AudioCalibrationService extends Service {
             Capture[] captures={new Capture(reference),new Capture(mic)};
             long end=SystemClock.elapsedRealtime()+8500;
             while(!captures[0].done()||!captures[1].done()){
-                check();if(SystemClock.elapsedRealtime()>end)throw new IllegalStateException("Android не вернул оба аудиопотока вовремя");
+                check();if(SystemClock.elapsedRealtime()>end)throw new IllegalStateException(L.t("Android did not return both audio streams in time"));
                 for(Capture capture:captures)capture.read();
                 Thread.sleep(8);
             }
@@ -154,14 +154,14 @@ public final class AudioCalibrationService extends Service {
         void read(){
             if(done())return;
             int count=record.read(buffer,0,Math.min(buffer.length,104000-samples),AudioRecord.READ_NON_BLOCKING);
-            if(count<0)throw new IllegalStateException("Ошибка аудиозахвата: "+count);
+            if(count<0)throw new IllegalStateException(L.t("Audio capture error: ")+count);
             for(int i=0;i<count;i++){if(samples>=8000)data[samples-8000]=buffer[i];samples++;}
             if(done()){
                 AudioTimestamp stamp=new AudioTimestamp();
-                if(record.getTimestamp(stamp,AudioTimestamp.TIMEBASE_BOOTTIME)!=AudioRecord.SUCCESS)throw new IllegalStateException("Android не вернул точное время аудиопотока");
+                if(record.getTimestamp(stamp,AudioTimestamp.TIMEBASE_BOOTTIME)!=AudioRecord.SUCCESS)throw new IllegalStateException(L.t("Android did not return the exact audio stream time"));
                 anchor=SyncMath.captureAnchor(stamp.nanoTime,stamp.framePosition,samples,data.length);
                 long age=SystemClock.elapsedRealtime()-(anchor+6000);
-                if(age < -100||age>1000)throw new IllegalStateException("Время аудиопотока недостоверно");
+                if(age < -100||age>1000)throw new IllegalStateException(L.t("Audio stream time is unreliable"));
             }
         }
     }
