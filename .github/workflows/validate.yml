@@ -33,6 +33,20 @@ jobs:
       - name: Windows Host build and self-test
         shell: pwsh
         run: .\windows\build.ps1 -Validate
+      - name: Windows Host single-file package
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:TEMP 'innosetup-6.4.3.exe'
+          curl.exe -fsSL -o $setup https://github.com/jrsoftware/issrc/releases/download/is-6_4_3/innosetup-6.4.3.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\windows\build.ps1 -Package
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath 'dist\CatchWave-Host\CatchWave.Host.exe')) { throw 'Missing single-file exe' }
+          if (-not (Test-Path -LiteralPath 'dist\CatchWave-Host-Setup.exe')) { throw 'Missing installer' }
+          $loose = Get-ChildItem -LiteralPath 'dist\CatchWave-Host' -Recurse -File | Where-Object { $_.Extension -in '.dll','.cmd','.bat' }
+          if ($loose) { throw "Package still contains $($loose.Name -join ', ')" }
       - name: Java and Windows interoperability
         shell: pwsh
         run: .\windows\test-interop.ps1

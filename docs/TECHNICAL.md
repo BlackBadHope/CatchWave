@@ -55,7 +55,7 @@ Recognition requires Microphone, internet and YouTube Music. Notification access
 | Platform or feature | Declared baseline | Physical validation |
 | --- | --- | --- |
 | Android | Android 11/API 30 minimum; target SDK 35, compile SDK 36; Java APK with no bundled native ABI libraries | OnePlus 12, Android 16/API 36 |
-| Windows Host | Windows desktop with .NET 9 Windows Desktop runtime; WinForms, WASAPI and user32 are required | Windows 11 x64, build 26200 |
+| Windows Host | Windows 10/11 x64. The packaged exe is self-contained; building it needs the .NET 9 SDK. WinForms, WASAPI and user32 are required | Windows 11 x64, build 26200 |
 | Windows ARM64/x86 | No RID/architecture is pinned in the project; needs a matching runtime/apphost build | Not validated |
 | Linux/macOS | Can build Android sources with the SDK; no Host implementation | No audio/remote support implemented |
 | iOS | No client implementation | Not supported |
@@ -78,12 +78,15 @@ Android requires JDK 17, SDK Platform 36 and Build Tools 36.0.0. Minimum Android
 
 Linux/macOS: use `./gradlew` with the same tasks. Default output: `app/build/outputs/apk/release/app-release-unsigned.apk`. Release builds deliberately have no debug-key fallback. Distribution APKs are signed separately using `tools/Sign-Release.ps1` and a protected private profile; see [signing policy](ANDROID-SIGNING.md). An independent build signed with another key cannot update the distributed app in place. Keys and passwords are never committed. Older Releases contain older versions.
 
-Windows needs Windows 10/11 and .NET 9 SDK/Windows Desktop runtime:
+Windows needs Windows 10/11 and the .NET 9 SDK to build. The user package does not ask the PC for a separate runtime:
 
 ```powershell
 .\windows\build.ps1 -Validate
 .\windows\test-interop.ps1
+.\windows\build.ps1 -Package
 ```
+
+`-Package` publishes one self-contained `win-x64` file (`PublishSingleFile` and `IncludeNativeLibrariesForSelfExtract`) to `dist/CatchWave-Host/CatchWave.Host.exe`, with `START-HERE.txt` and `START-HERE-RU.txt`. Inno Setup 6.3 or newer also builds `dist/CatchWave-Host-Setup.exe`, which adds Start-menu and desktop shortcuts. No command script is part of that package.
 
 Test modes use bounded loopback TLS, synthetic silence and fake media keys. They do not capture real audio, control a phone or display a live pairing QR. GitHub Actions runs these Android, Host and Java/.NET checks.
 

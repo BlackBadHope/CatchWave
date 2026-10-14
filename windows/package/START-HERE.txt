@@ -1,0 +1,24 @@
+CatchWave Host
+
+This plays your computer's sound on your Android phone.
+
+1. Install
+Open CatchWave-Host-Setup.exe if you have it. When it finishes, CatchWave Host is in the Start menu and on the desktop.
+If you only have CatchWave.Host.exe, double-click that file. Nothing else needs to be installed.
+
+2. Open
+A window appears with a square code.
+If Windows says it protected your PC, click More info, then Run anyway.
+If Windows asks which networks to allow, choose your home network.
+
+3. Scan the code with your phone
+Open CatchWave on the phone. Tap Open PC audio, then Scan QR code, and point the camera at the code in the computer window.
+Play music on the computer. You should hear it on the phone.
+
+If there is no sound
+The phone and the computer need to be on the same home Wi-Fi.
+Turn the phone's volume up.
+In the CatchWave window, choose Audio source, then Windows default, or the speakers or headphones you are using. Play the music again.
+The code is new every time you open CatchWave Host. Scan the one on the screen now.
+
+Close the window when you are finished. Next time, open CatchWave Host from the Start menu, the desktop, or the same file.

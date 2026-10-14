@@ -74,8 +74,8 @@ Commands require a separate approval of the phone's key on the PC. A QR code gra
 
 ## Get started in 3 minutes
 
-1. **Download** [CatchWave-Host-0.1.47-win-x64.zip](https://github.com/BlackBadHope/CatchWave/releases/download/v0.1.47-beta/CatchWave-Host-0.1.47-win-x64.zip) and [CatchWave-Android-0.1.47-code72.apk](https://github.com/BlackBadHope/CatchWave/releases/download/v0.1.47-beta/CatchWave-Android-0.1.47-code72.apk) from the [0.1.47 beta](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta). This package has no setup wizard.
-2. **On the PC:** extract the whole ZIP into one folder and open `CatchWave.Host.exe`. SmartScreen will say Windows protected your PC, because this beta is unsigned. Choose **More info → Run anyway**. If Windows asks about networks, allow private ones only. Do not open `Start-CatchWave.cmd`.
+1. **Download** the phone app [CatchWave-Android-0.1.47-code72.apk](https://github.com/BlackBadHope/CatchWave/releases/download/v0.1.47-beta/CatchWave-Android-0.1.47-code72.apk) from the [0.1.47 beta](https://github.com/BlackBadHope/CatchWave/releases/tag/v0.1.47-beta). The Windows file on that page is still the old many-file zip. The current build is one `CatchWave.Host.exe`, or `CatchWave-Host-Setup.exe` when Inno Setup 6 is installed. Those files are not on the 0.1.47 page yet. Build them with `.\windows\build.ps1 -Package` (see below). Until then, the old zip still runs if you open only `CatchWave.Host.exe` and leave every other file in it alone.
+2. **On the PC:** open `CatchWave-Host-Setup.exe` if you have it, then start **CatchWave Host** from the Start menu or the desktop. With only `CatchWave.Host.exe`, double-click that file. Windows may say it protected your PC, because this beta is unsigned. Choose **More info → Run anyway**. If Windows asks about networks, allow your home network only.
 3. **On the phone:** open the APK. If Android blocks it, allow installs for the browser or Files app from that prompt, then install over any older CatchWave. Open **Open PC audio** (**«Открыть звук с ПК»** in the release build) → **Scan QR code**, scan the code on the PC and confirm.
 4. *(Optional)* Approve the phone's key in the Host, turn on **Allow gestures** (**«Разрешить жесты»**) and press **Activate control** (**«Активировать управление»**).
 
@@ -109,7 +109,7 @@ The Host captures the selected output with WASAPI loopback, cuts it into 20 ms f
 | | Supported | Tested on |
 | --- | --- | --- |
 | Phone | Android 11 or newer, camera for QR pairing; accelerometer, gyroscope and rotation sensor for gestures | OnePlus 12, Android 16 |
-| PC | Windows 10/11 x64 with .NET 9 Desktop Runtime | Windows 11 x64 |
+| PC | Windows 10/11 x64. The packaged Host is one program and does not need a separate .NET install | Windows 11 x64 |
 | Network | Phone and PC on the same trusted Wi-Fi/LAN, or a data USB cable | Home Wi-Fi, USB-C cable |
 
 iOS, macOS and Linux hosts are not supported.
@@ -119,10 +119,14 @@ iOS, macOS and Linux hosts are not supported.
 ```powershell
 # Android (JDK 17, Android SDK 36)
 .\gradlew.bat --no-daemon :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
-# Windows Host (.NET 9 SDK)
+# Windows Host (.NET 9 SDK). -Validate is the test build.
 .\windows\build.ps1 -Validate
 .\windows\test-interop.ps1
+# One self-contained exe for people to run. With Inno Setup 6.3+, also dist\CatchWave-Host-Setup.exe.
+.\windows\build.ps1 -Package
 ```
+
+`-Package` writes `dist\CatchWave-Host\CatchWave.Host.exe` plus plain English and Russian start notes. The shortcut and a double-click open the program with no extra flags. A separate .NET install is not required for that file.
 
 Release APKs are signed separately; see the [signing policy](docs/ANDROID-SIGNING.md). More build notes are in the [technical reference](docs/TECHNICAL.md#build-and-verify).
 
