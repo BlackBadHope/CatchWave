@@ -19,7 +19,13 @@ Install .NET 9 SDK and Windows Desktop runtime on a Windows desktop version cove
 .\windows\test-interop.ps1
 ```
 
-Output: `%TEMP%/CatchWave-public25-host-build/bin/`. Keep all produced files together for portable use. QRCoder 1.6.0 resolves through NuGet; preserve its license when distributing binaries. Interop also needs JDK 17 on PATH or `JAVA_HOME`.
+`-Validate` output: `%TEMP%/CatchWave-public25-host-build/bin/`. That test build is not the download people should receive.
+
+```powershell
+.\windows\build.ps1 -Package
+```
+
+`-Package` publishes one self-contained x64 file to `dist/CatchWave-Host/CatchWave.Host.exe` and copies the plain start notes beside it. With Inno Setup 6.3 or newer it also writes `dist/CatchWave-Host-Setup.exe`. The setup creates Start-menu and desktop shortcuts that open the program directly. QRCoder 1.6.0 resolves through NuGet; preserve its license when distributing binaries. Interop also needs JDK 17 on PATH or `JAVA_HOME`.
 
 ## Run and pair
 
