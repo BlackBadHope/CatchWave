@@ -16,7 +16,7 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=34)
 public class SyncServiceTest {
-    @Before public void resetModel(){SessionModel m=SessionModel.INSTANCE;m.track=null;m.live=false;m.running=false;m.aligned=false;m.manualHold=false;m.needsOpen=false;m.compatibleLaunchRequested=false;MainActivity.visible=false;}
+    @Before public void resetModel(){L.set(org.robolectric.RuntimeEnvironment.getApplication(),true);SessionModel m=SessionModel.INSTANCE;m.track=null;m.live=false;m.running=false;m.aligned=false;m.manualHold=false;m.needsOpen=false;m.compatibleLaunchRequested=false;MainActivity.visible=false;}
     @Test public void stalePlayerErrorDoesNotTriggerCompetingLaunch() throws Exception {
         var lifecycle=Robolectric.buildService(SyncService.class).create();SyncService s=lifecycle.get();MediaSession player=new MediaSession(s,"stale");long now=android.os.SystemClock.elapsedRealtime();
         org.robolectric.Shadows.shadowOf(player.getController()).setPlaybackState(new android.media.session.PlaybackState.Builder().setState(7,0,1,now-1000).setErrorMessage("Old failure").build());

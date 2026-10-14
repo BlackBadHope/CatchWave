@@ -5,7 +5,7 @@ using System.Net.Sockets;
 namespace CatchWave.Host;
 
 internal sealed record HostEndpoint(string Address,string Name,bool Usb=false) {
-    public override string ToString()=>$"{(Usb?"USB-модем":"Локальная сеть")} · {Address}";
+    public override string ToString()=>$"{(Usb?L.T("USB tethering"):L.T("Local network"))} · {Address}";
 }
 internal static class HostNetwork {
     internal static bool UsbTether(string description)=>description.Contains("RNDIS",StringComparison.OrdinalIgnoreCase)||description.Contains("Remote NDIS",StringComparison.OrdinalIgnoreCase)||description.Contains("USB NCM",StringComparison.OrdinalIgnoreCase);

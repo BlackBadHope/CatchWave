@@ -57,6 +57,6 @@ final class BoundedJson {
         }
         check.run();
     }
-    private static void bad()throws IOException{throw new RecognitionClient.RequestException(RecognitionClient.Kind.BAD_RESPONSE,"Ответ сервиса превышает безопасные ограничения JSON.");}
+    private static void bad()throws IOException{throw new RecognitionClient.RequestException(RecognitionClient.Kind.BAD_RESPONSE,L.t("The service response exceeds safe JSON limits."));}
     private BoundedJson(){}
 }

@@ -22,7 +22,7 @@ public class ServiceBoundaryTest {
     private SyncService service;
     private MediaSession player;
     private long now;
-    @Before public void setup()throws Exception{
+    @Before public void setup()throws Exception{L.set(org.robolectric.RuntimeEnvironment.getApplication(),true);
         m.track=null;m.live=false;m.manualHold=false;m.aligned=false;m.guardingTrack=false;m.running=true;m.needsAudioRefine=false;
         life=Robolectric.buildService(SyncService.class).create();service=life.get();player=new MediaSession(service,"end");
         now=SystemClock.elapsedRealtime();m.track=new Track("one","Song","Artist","",10000,now,0);

@@ -3,16 +3,16 @@ package app.catchwave;
 /** What leaves the phone. No advertising ID, analytics or account. */
 final class Privacy {
     private Privacy(){}
-    static final String TITLE="Что уходит с телефона";
+    static String title(){return L.t("What leaves the phone");}
     static String notice(){
-        return "Рекламного идентификатора нет. Аналитики, аккаунта CatchWave и своей рекламы в приложении нет.\n\n"
+        return L.t("There is no advertising ID. There are no analytics, no CatchWave account and no ads of our own in the app.\n\n")
             +RecognitionPath.explanation()+"\n\n"
-            +"На устройстве: микрофон, внутренний звук и буферы звука с ПК только в оперативной памяти. Настройки и последние коды ошибки/этапа LAN хранятся в закрытых настройках приложения. Там же сохраняются адрес ПК, pin сертификата и токен сопряжения; «Забыть сопряжение» удаляет их. Локальный кольцевой журнал хранит последние 256 событий LAN: время/часовой пояс, случайный ID сеанса, этапы, focus/route, счётчики, громкость и результаты команд. Аудио, сырые датчики, QR, токены и названия треков не записываются. Просмотр и экспорт выбираете вы. Резервных копий Android нет.\n\n"
-            +"Распознавание, только HTTPS:\n"
-            +"• amp.shazam.com — каталог отпечатков (не приложение Shazam, не запись). Название, исполнитель, оценка таймкода. UUID в адресе одноразовый.\n"
-            +"• music.youtube.com — поиск той же записи для плеера. Запуск — нативная медиасессия YouTube Music, если он установлен.\n\n"
-            +"Звук с ПК: PCM и команды идут по локальной сети через TLS с проверкой pin и токена. QR содержит данные сопряжения; сканирование камерой происходит локально. Windows Host сохраняет выбор разрешения управления и ограниченный локальный журнал метаданных, а его ключ и токен создаются для текущего запуска.\n\n"
-            +"Доступ к уведомлениям нужен для медиасессии YouTube Music. Текст уведомлений не читается. Разрешение показывать уведомления используется фоновой службой воспроизведения. Камера нужна для QR. Жесты при выключенном экране включаются отдельно и могут расходовать батарею.\n\n"
-            +"Каталог и YouTube видят IP запроса. Это их сервисы, не наш сбор. 3×≤120 мс — согласованность распознавателя, не обещание слышимых миллисекунд.";
+            +L.t("On the device: microphone, internal audio and PC audio buffers are kept only in RAM. Settings and the latest LAN error/stage codes are stored in the app's private settings. The PC address, certificate pin and pairing token are stored there too; «Forget pairing» deletes them. A local ring log keeps the last 256 LAN events: time/time zone, a random session ID, stages, focus/route, counters, volume and command results. Audio, raw sensor data, QR codes, tokens and track titles are not recorded. You choose whether to view or export it. There are no Android backups.\n\n")
+            +L.t("Recognition, HTTPS only:\n")
+            +L.t("• amp.shazam.com — fingerprint catalog (not the Shazam app, not a recording). Title, artist, timecode estimate. The UUID in the address is single-use.\n")
+            +L.t("• music.youtube.com — search for the same recording for the player. Launch via the native YouTube Music media session if it is installed.\n\n")
+            +L.t("PC audio: PCM and commands travel over the local network via TLS with pin and token checks. The QR contains pairing data; camera scanning happens locally. Windows Host saves the control permission choice and a limited local metadata log; its key and token are created for the current run.\n\n")
+            +L.t("Notification access is needed for the YouTube Music media session. Notification text is not read. The permission to show notifications is used by the background playback service. The camera is needed for the QR. Gestures with the screen off are enabled separately and may use battery.\n\n")
+            +L.t("The catalog and YouTube see the request IP. These are their services, not our collection. 3×≤120 ms is recognizer consistency, not a promise of audible milliseconds.");
     }
 }

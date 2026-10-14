@@ -25,12 +25,12 @@ internal sealed class HostWindow:Form {
     private string transport="Wi-Fi";
     private string usbNotice="";
     private readonly Label connection=Label(28,true),reason=Label(11),statistics=Label(10),phone=Label(11),controlStatus=Label(17,true),controlHint=Label(11),saving=Label(10),badge=Label(11,true);
-    private readonly Button control=Button(""),revoke=Button("Отозвать разрешение ПК");
+    private readonly Button control=Button(""),revoke=Button(L.T("Revoke PC permission"));
     private readonly bool locked;private readonly Func<bool,bool> save;
     private readonly PictureBox picture=new(),guide=new();
     private readonly Panel pairing=new(),diagnostics=new(),commands=new(),content=new();
-    private readonly Button network=Button(""),usb=Button("Подключить по USB");
-    private readonly Button audioOutput=Button("Windows по умолчанию");
+    private readonly Button network=Button(""),usb=Button(L.T("Connect via USB"));
+    private readonly Button audioOutput=Button(L.T("Windows default"));
     private readonly Label audioHint=Label(9),audioNote=Label(9);
     private readonly ContextMenuStrip audioMenu=new();
     private HostAudioSource? audioSource;
@@ -38,7 +38,7 @@ internal sealed class HostWindow:Form {
     // Windows still uses a dropdown after Closed fires. Keep it alive until the form is disposed.
     private readonly ContextMenuStrip networkMenu=new();
     private readonly Label privacy=Label(9);
-    private readonly Button pairAction=Button(""),diagnosticAction=Button("Диагностика");
+    private readonly Button pairAction=Button(""),diagnosticAction=Button(L.T("Diagnostics"));
     private readonly Label details=Label(10);
     private string endpoint;private readonly string fingerprint;
     private bool pairOpen=true,diagnosticOpen;
@@ -88,14 +88,14 @@ internal sealed class HostWindow:Form {
         connection.AutoSize=false;connection.Dock=DockStyle.Fill;left.Controls.Add(connection,0,0);
         var audioPanel=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};
         audioPanel.RowStyles.Add(new RowStyle(SizeType.Absolute,24));audioPanel.RowStyles.Add(new RowStyle(SizeType.Absolute,38));audioPanel.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        var audioTitle=Label(10);audioTitle.Text="Источник звука";audioTitle.Dock=DockStyle.Fill;audioTitle.AutoSize=false;audioTitle.Margin=Padding.Empty;
-        audioOutput.Dock=DockStyle.Fill;audioOutput.AccessibleName="Источник звука Windows";audioOutput.Enabled=false;
-        audioHint.AutoSize=false;audioHint.Dock=DockStyle.Fill;audioHint.Margin=Padding.Empty;audioHint.Text=synthetic?"Тестовый источник: тишина":"Выбор источника до подключения телефона.";
+        var audioTitle=Label(10);audioTitle.Text=L.T("Audio source");audioTitle.Dock=DockStyle.Fill;audioTitle.AutoSize=false;audioTitle.Margin=Padding.Empty;
+        audioOutput.Dock=DockStyle.Fill;audioOutput.AccessibleName=L.T("Windows audio source");audioOutput.Enabled=false;
+        audioHint.AutoSize=false;audioHint.Dock=DockStyle.Fill;audioHint.Margin=Padding.Empty;audioHint.Text=synthetic?L.T("Test source: silence"):L.T("Choose the source before connecting the phone.");
         audioPanel.Controls.Add(audioTitle,0,0);audioPanel.Controls.Add(audioOutput,0,1);audioPanel.Controls.Add(audioHint,0,2);left.Controls.Add(audioPanel,0,1);
-        var source=Label(10);source.Text="Подключение к телефону";
+        var source=Label(10);source.Text=L.T("Connection to the phone");
         var sourcePanel=new Panel{Dock=DockStyle.Fill};source.AutoSize=false;source.Height=20;source.Dock=DockStyle.Top;
         network.Dock=DockStyle.Top;network.Text=new HostEndpoint(address,"Current").ToString();
-        network.AccessibleName="Подключение через USB-модем или локальную сеть";
+        network.AccessibleName=L.T("Connection via USB tethering or local network");
         usb.Dock=DockStyle.Bottom;usb.Height=network.Height=34;sourcePanel.Controls.Add(network);sourcePanel.Controls.Add(source);sourcePanel.Controls.Add(usb);left.Controls.Add(sourcePanel,0,2);
         controlStatus.AutoSize=false;controlStatus.Dock=DockStyle.Fill;left.Controls.Add(controlStatus,0,3);
         guide.Dock=DockStyle.Fill;guide.SizeMode=PictureBoxSizeMode.Zoom;guide.BackColor=Color.Transparent;
@@ -115,10 +115,10 @@ internal sealed class HostWindow:Form {
         pairing.Dock=DockStyle.Fill;
         var pairLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Padding=new Padding(4,12,4,4)};
         pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,32));pairLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));pairLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,62));
-        var scan=Label(11);scan.Text="Сканируйте QR в CatchWave";scan.TextAlign=ContentAlignment.MiddleCenter;scan.Dock=DockStyle.Fill;
+        var scan=Label(11);scan.Text=L.T("Scan the QR in CatchWave");scan.TextAlign=ContentAlignment.MiddleCenter;scan.Dock=DockStyle.Fill;
         using(var bytes=new MemoryStream(PairingQr.Png(pairCode,4)))using(var img=Image.FromStream(bytes)){picture.Image=new Bitmap(img);assets.Add(picture.Image);}
         picture.Dock=DockStyle.Fill;picture.SizeMode=PictureBoxSizeMode.CenterImage;picture.BackColor=Color.White;
-        privacy.Text="QR открывает доступ к звуку. Не отправляйте фото.\nПосле перезапуска Host нужен новый QR.";privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
+        privacy.Text=L.T("The QR grants access to audio. Do not send photos of it.\nAfter a Host restart a new QR is needed.");privacy.Dock=DockStyle.Fill;privacy.Padding=new Padding(0,8,0,0);
         pairLayout.Controls.Add(scan,0,0);pairLayout.Controls.Add(picture,0,1);pairLayout.Controls.Add(privacy,0,2);pairing.Controls.Add(pairLayout);
         content.Dock=DockStyle.Fill;content.Controls.Add(pairing);right.Controls.Add(content,0,1);
         phone.Dock=DockStyle.Fill;phone.MaximumSize=new Size(300,0);right.Controls.Add(phone,0,2);
@@ -129,37 +129,40 @@ internal sealed class HostWindow:Form {
         diagnostics.Dock=DockStyle.Fill;
         var diagnosticLayout=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(4,12,4,0)};
         statistics.MaximumSize=details.MaximumSize=new Size(288,0);
-        details.Text=$"Адрес: {endpoint}\nСертификат SHA-256:\n{fingerprint}";details.AutoSize=true;
-        var logs=Button("Открыть журнал");logs.Width=284;logs.Click+=(_,_)=>ShowLog();
-        var export=Button("Экспорт диагностики");export.Width=284;export.Click+=(_,_)=>ExportLog();
+        details.Text=string.Format(L.T("Address: {0}\nCertificate SHA-256:\n{1}"),endpoint,fingerprint);details.AutoSize=true;
+        var logs=Button(L.T("Open log"));logs.Width=284;logs.Click+=(_,_)=>ShowLog();
+        var export=Button(L.T("Export diagnostics"));export.Width=284;export.Click+=(_,_)=>ExportLog();
         revoke.Width=284;revoke.Click+=(_,_)=>SetMedia(false);
-        foreach(Control item in new Control[]{statistics,details,logs,export,revoke})diagnosticLayout.Controls.Add(item);
+        // Bilingual label so either reader can find it; the window is built once, so a change applies on the next start.
+        bool russianNext=L.Russian;var language=Button(LanguageLabel(russianNext,false));language.Width=284;
+        language.Click+=(_,_)=>{if(L.Save(!russianNext)){russianNext=!russianNext;language.Text=LanguageLabel(russianNext,russianNext!=L.Russian);}};
+        foreach(Control item in new Control[]{statistics,details,logs,export,language,revoke})diagnosticLayout.Controls.Add(item);
         diagnostics.Controls.Add(diagnosticLayout);content.Controls.Add(diagnostics);
         commands.Dock=DockStyle.Fill;
         var commandLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=3,Padding=new Padding(10,40,10,30)};
         commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
         commandLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,60));commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent,50));commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent,50));
-        var commandTitle=Label(14,true);commandTitle.Text="Постукивания по телефону";commandTitle.Dock=DockStyle.Fill;commandLayout.Controls.Add(commandTitle,0,0);commandLayout.SetColumnSpan(commandTitle,2);
-        string[] captions={"Пауза / старт","Следующий","Предыдущий","Звук телефона"};
+        var commandTitle=Label(14,true);commandTitle.Text=L.T("Taps on the phone");commandTitle.Dock=DockStyle.Fill;commandLayout.Controls.Add(commandTitle,0,0);commandLayout.SetColumnSpan(commandTitle,2);
+        string[] captions={L.T("Pause / play"),L.T("Next"),L.T("Previous"),L.T("Phone audio")};
         for(int i=0;i<4;i++){var cell=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,Padding=new Padding(4,6,4,6)};
             var count=Label(32,true);count.Text=(i+3).ToString();count.ForeColor=Accent;var caption=Label(10);caption.Text=captions[i];cell.Controls.Add(count);cell.Controls.Add(caption);commandLayout.Controls.Add(cell,i%2,1+i/2);}
         commands.Controls.Add(commandLayout);content.Controls.Add(commands);
 
         var footer=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=new Padding(0,8,0,0)};
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,270));
-        audioNote.Text=synthetic?"Тестовый источник: тишина":"Звук: Windows по умолчанию";audioNote.Dock=DockStyle.Fill;audioNote.AutoSize=false;audioNote.AutoEllipsis=true;audioNote.TextAlign=ContentAlignment.MiddleLeft;
-        var close=Button("Отключить и закрыть Host");close.Dock=DockStyle.Fill;close.Click+=(_,_)=>Close();
+        audioNote.Text=synthetic?L.T("Test source: silence"):L.T("Audio: Windows default");audioNote.Dock=DockStyle.Fill;audioNote.AutoSize=false;audioNote.AutoEllipsis=true;audioNote.TextAlign=ContentAlignment.MiddleLeft;
+        var close=Button(L.T("Disconnect and close Host"));close.Dock=DockStyle.Fill;close.Click+=(_,_)=>Close();
         footer.Controls.Add(audioNote,0,0);footer.Controls.Add(close,1,0);page.Controls.Add(footer,0,2);
 
         control.Click+=(_,_)=>{
             string? pending=trusted?.PendingFingerprint;
             if(pending!=null&&!locked){
-                if(MessageBox.Show(this,"Сверьте отпечаток ключа управления в диагностике CatchWave на телефоне:\n\n"+pending+"\n\nРазрешить этому телефону команды на ПК? QR сам по себе разрешает только звук.","Разрешить телефон",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK){
-                    saving.Text=trusted!.Approve(pending)?"":"Телефон сменился или разрешение не сохранено. Повторите проверку.";if(saving.Text=="")SetMedia(true);Render();
+                if(MessageBox.Show(this,L.T("Compare the control key fingerprint in CatchWave diagnostics on the phone:\n\n")+pending+L.T("\n\nAllow this phone to send commands to the PC? The QR by itself allows audio only."),L.T("Allow phone"),MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK){
+                    saving.Text=trusted!.Approve(pending)?"":L.T("The phone changed or the permission was not saved. Check again.");if(saving.Text=="")SetMedia(true);Render();
                 }
             }
             else if(MediaEnabled)SetMedia(false);
-            else if(!locked&&MessageBox.Show(this,"Разрешить телефону управлять проигрывателем этого ПК? На телефоне управление также нужно разрешить и активировать.","Управление с телефона",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
+            else if(!locked&&MessageBox.Show(this,L.T("Allow the phone to control this PC's player? Control must also be allowed and activated on the phone."),L.T("Control from the phone"),MessageBoxButtons.OKCancel,MessageBoxIcon.Question)==DialogResult.OK)SetMedia(true);
         };
         model.Changed+=RefreshState;timer.Tick+=(_,_)=>Render();timer.Start();
         FormClosing+=(_,_)=>stop.Cancel();
@@ -174,19 +177,19 @@ internal sealed class HostWindow:Form {
         pairing.Visible=pairOpen&&!diagnosticOpen;diagnostics.Visible=diagnosticOpen;
         commands.Visible=!pairOpen&&!diagnosticOpen;
         (diagnosticOpen?diagnostics:pairOpen?pairing:commands).BringToFront();
-        pairAction.Text=pairOpen?"Скрыть QR":"Подключить телефон";
-        diagnosticAction.Text=diagnosticOpen?"Закрыть диагностику":"Диагностика";
+        pairAction.Text=pairOpen?L.T("Hide QR"):L.T("Connect phone");
+        diagnosticAction.Text=diagnosticOpen?L.T("Close diagnostics"):L.T("Diagnostics");
     }
     private void ShowLog(){
-        using var dialog=new Form{Text="CatchWave — последние 256 событий",Width=940,Height=650,BackColor=Surface,StartPosition=FormStartPosition.CenterParent};
+        using var dialog=new Form{Text=L.T("CatchWave — last 256 events"),Width=940,Height=650,BackColor=Surface,StartPosition=FormStartPosition.CenterParent};
         dialog.Controls.Add(new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,BackColor=Surface,ForeColor=TextColor,Font=new Font("Consolas",10),Text=model.Log.Text().Replace("\n",Environment.NewLine)});
         dialog.ShowDialog(this);
     }
     private void ExportLog(){using var pick=new SaveFileDialog{Filter="Text|*.txt",FileName="CatchWave-diagnostics.txt"};
-        if(pick.ShowDialog(this)==DialogResult.OK)try{File.WriteAllText(pick.FileName,model.Log.Text());}catch(IOException){MessageBox.Show(this,"Не удалось сохранить диагностику");}catch(UnauthorizedAccessException){MessageBox.Show(this,"Система запретила запись диагностики");}}
+        if(pick.ShowDialog(this)==DialogResult.OK)try{File.WriteAllText(pick.FileName,model.Log.Text());}catch(IOException){MessageBox.Show(this,L.T("Could not save diagnostics"));}catch(UnauthorizedAccessException){MessageBox.Show(this,L.T("The system did not allow writing diagnostics"));}}
     private void SetMedia(bool value){if(locked)return;model.Log.Event("CONTROL",value?"PERMISSION_ON":"PERMISSION_OFF");
         lock(policyGate){HostPermission old=Permission;if(old.Enabled!=value)Volatile.Write(ref permission,new(value,old.Generation+1));}
-        saving.Text=save(value)?"":value?"Включение не сохранено; оно действует только в этом сеансе.":"Выключение не сохранено. После перезапуска проверьте разрешение ПК.";Render();}
+        saving.Text=save(value)?"":value?L.T("Enabling was not saved; it applies only to this session."):L.T("Disabling was not saved. After a restart, check the PC permission.");Render();}
     internal bool Execute(byte action,HostPermission observed){lock(policyGate){return Permission==observed&&observed.Enabled&&MediaKeys.Send(action);}}
     private int renderPending;
     private void RefreshState(){
@@ -196,39 +199,41 @@ internal sealed class HostWindow:Form {
     }
     internal void Render(){
         if(IsDisposed)return;HostSnapshot s=model.Snapshot;
-        if(audioSource!=null){audioOutput.Text=audioSource.Selected.Name;audioOutput.Enabled=(!audioSource.Busy||audioSource.LiveSwitch)&&!audioLoading;audioHint.Text=audioSource.Hint;audioNote.Text="Звук: "+audioSource.Selected.Name;audioOutput.AccessibleName="Источник звука: "+audioSource.Selected.Name;}
+        if(audioSource!=null){audioOutput.Text=audioSource.Selected.Name;audioOutput.Enabled=(!audioSource.Busy||audioSource.LiveSwitch)&&!audioLoading;audioHint.Text=audioSource.Hint;audioNote.Text=L.T("Audio: ")+audioSource.Selected.Name;audioOutput.AccessibleName=L.T("Audio source: ")+audioSource.Selected.Name;}
         connection.Text=s.Stage switch {
-            HostStage.Listening=>"Подключите телефон",HostStage.Tcp or HostStage.Tls=>"Подключение…",HostStage.Auth=>"Проверка сопряжения…",
-            HostStage.Authenticated or HostStage.Format=>"Запуск звука…",HostStage.SilenceSent=>"Тишина с ПК",HostStage.AudioSent=>"Звук отправляется",
-            HostStage.Disconnected=>"Телефон отключён",_=>s.Error==HostError.CaptureFailed?"Источник недоступен":"Связь прервалась"
+            HostStage.Listening=>L.T("Connect your phone"),HostStage.Tcp or HostStage.Tls=>L.T("Connecting…"),HostStage.Auth=>L.T("Checking pairing…"),
+            HostStage.Authenticated or HostStage.Format=>L.T("Starting audio…"),HostStage.SilenceSent=>L.T("Silence from PC"),HostStage.AudioSent=>L.T("Sending audio"),
+            HostStage.Disconnected=>L.T("Phone disconnected"),_=>s.Error==HostError.CaptureFailed?L.T("Source unavailable"):L.T("Connection lost")
         };
         bool fresh=s.ClientAgeMs>=0&&s.ClientAgeMs<1500&&s.Live;
-        badge.Text=s.Live?"Подключено · "+transport:s.Stage==HostStage.Error?"Ошибка соединения":"Ожидание телефона";
+        badge.Text=s.Live?L.T("Connected · ")+transport:s.Stage==HostStage.Error?L.T("Connection error"):L.T("Waiting for the phone");
         badge.ForeColor=s.Live?Accent:Muted;
         reason.Text=s.Error==HostError.None?WaitingHint(s.Stage,waitingClock.ElapsedMilliseconds):s.Error switch {
-            HostError.AuthRejected=>"Сканируйте QR текущего Host.",HostError.TlsHandshake=>"Не удалось установить защищённое соединение.",
-            HostError.CaptureFailed=>"Аудиовыход Windows недоступен. Откройте диагностику.",
-            HostError.PeerClosed=>"Можно подключить телефон снова.",HostError.Protocol=>"Проверьте совместимость версий Host и Android.",_=>"Проверьте состояние на телефоне и откройте диагностику."
+            HostError.AuthRejected=>L.T("Scan the QR of the current Host."),HostError.TlsHandshake=>L.T("Could not establish a secure connection."),
+            HostError.CaptureFailed=>L.T("The Windows audio output is unavailable. Open diagnostics."),
+            HostError.PeerClosed=>L.T("You can connect the phone again."),HostError.Protocol=>L.T("Check that the Host and Android versions are compatible."),_=>L.T("Check the status on the phone and open diagnostics.")
         };
         if(s.Error==HostError.None&&!string.IsNullOrEmpty(usbNotice))reason.Text=usbNotice;
-        statistics.Text=$"Сеанс: {s.Seconds} с\nОтправлено кадров: {s.Frames}\nПропущено интервалов: {s.Skipped}\nКод: {s.Error} · этап: {s.FailedAt}\nПоследняя причина: {model.Log.LastReason}\nОшибок журнала: {model.Log.StorageFailures}";
-        phone.Text=!fresh?"Вывод телефона не подтверждён":s.ClientOutput switch {0=>"Ожидаем вывод телефона",1=>"Телефон принимает тишину",_=>"Телефон принимает звук"};
+        statistics.Text=string.Format(L.T("Session: {0} s\nFrames sent: {1}\nSkipped intervals: {2}\nCode: {3} · stage: {4}\nLast reason: {5}\nLog errors: {6}"),s.Seconds,s.Frames,s.Skipped,s.Error,s.FailedAt,model.Log.LastReason,model.Log.StorageFailures);
+        phone.Text=!fresh?L.T("Phone output not confirmed"):s.ClientOutput switch {0=>L.T("Waiting for phone output"),1=>L.T("The phone is receiving silence"),_=>L.T("The phone is receiving audio")};
         HostPermission devicePolicy=trusted?.CurrentPermission(Permission)??Permission;
         bool pending=trusted?.PendingFingerprint!=null;
         bool effective=s.Effective(devicePolicy.Enabled,devicePolicy.Generation);
-        controlStatus.Text=effective?"Жесты готовы":!s.Live?"Ожидаем телефон":pending?"Разрешите этот телефон":!MediaEnabled?"Нет разрешения ПК":"Активируйте на телефоне";
+        controlStatus.Text=effective?L.T("Gestures ready"):!s.Live?L.T("Waiting for the phone"):pending?L.T("Allow this phone"):!MediaEnabled?L.T("No PC permission"):L.T("Activate on the phone");
         controlStatus.ForeColor=effective?Accent:TextColor;
-        string cause=locked?"Команды заблокированы флагом запуска":!MediaEnabled?"Разрешение ПК выключено":!fresh||s.ClientOutput==0?"Разрешение ПК включено. Подключите телефон.":!s.ClientWants?"Разрешение ПК включено; включите управление на телефоне":!effective?"Телефон заблокировал команды: активируйте управление кнопкой и держите спокойно 1,5 секунды":"Жесты готовы на телефоне. Наклон меняет громкость телефона.";
-        controlHint.Text=pending?"Новый ключ телефона. Сверьте отпечаток в диагностике телефона и разрешите управление один раз.":cause;
-        control.Text=pending?"Разрешить управление этому телефону":MediaEnabled?"Разрешение ПК включено · выключить":"Разрешить управление на ПК";
+        string cause=locked?L.T("Commands blocked by a launch flag"):!MediaEnabled?L.T("PC permission is off"):!fresh||s.ClientOutput==0?L.T("PC permission is on. Connect the phone."):!s.ClientWants?L.T("PC permission is on; enable control on the phone"):!effective?L.T("The phone blocked commands: activate control with the button and hold still for 1.5 seconds"):L.T("Gestures are ready on the phone. Tilting changes the phone volume.");
+        controlHint.Text=pending?L.T("New phone key. Compare the fingerprint in the phone diagnostics and allow control once."):cause;
+        control.Text=pending?L.T("Allow control for this phone"):MediaEnabled?L.T("PC permission on · turn off"):L.T("Allow control on the PC");
         control.Enabled=!locked&&(MediaEnabled||fresh&&s.ClientOutput>0);revoke.Enabled=!locked&&MediaEnabled;
         control.BackColor=MediaEnabled?Accent:Surface;control.ForeColor=MediaEnabled?Surface:TextColor;
         if(wasLive!=s.Live){pairOpen=!s.Live;wasLive=s.Live;}
         RenderPanels();
     }
     internal void SetDiagnosticsForPreview(bool value){diagnosticOpen=value;RenderPanels();}
+    internal static string LanguageLabel(bool russian,bool restart)=>(russian?"Язык: русский · English":"Language: English · Русский")
+        +(restart?(russian?" · после перезапуска Host":" · after Host restart"):"");
     internal static string WaitingHint(HostStage stage,long elapsed)=>stage==HostStage.Listening&&elapsed>=15000
-        ?"Нет подключения? Проверьте общую Wi-Fi сеть, брандмауэр для частной сети и изоляцию клиентов роутера.":"";
+        ?L.T("No connection? Check the shared Wi-Fi network, the firewall for private networks and the router's client isolation."):"";
     internal void UseStatus(HostStatus next,string route){
         if(IsDisposed||!IsHandleCreated)return;
         if(InvokeRequired){BeginInvoke(()=>UseStatus(next,route));return;}
@@ -236,14 +241,14 @@ internal sealed class HostWindow:Form {
     }
     internal void UsbMessage(string code){
         if(IsDisposed||!IsHandleCreated)return;if(InvokeRequired){BeginInvoke(()=>UsbMessage(code));return;}
-        usbNotice=code switch{"USB_MANUAL_SETUP_REQUIRED"=>"Для этого USB-подключения нужна ручная настройка. Нажмите «Подключить по USB».","USB_BINDING_FAILED"=>"Не удалось настроить USB-подключение в Windows. Подробности — в диагностике.","USB_BINDING_RESTART_REQUIRED"=>"Настройка USB завершена. Переподключите кабель и повторите подключение.","USB_SETUP_CANCELLED"=>"Настройка USB отменена. Wi-Fi остаётся доступен.","USB_DRIVER_MISSING"=>"Для подключения по кабелю нужен USB-компонент CatchWave.","USB_DRIVER_RESTART_REQUIRED"=>"Перезапустите ПК для завершения установки USB-компонента. Wi-Fi доступен.","USB_DRIVER_ACCESS_DENIED"=>"Windows не разрешает доступ к USB-компоненту.","USB_DRIVER_BUSY"=>"USB-компонент занят. Повторите подключение.","USB_AOA_UNSUPPORTED"=>"Телефон не поддерживает режим USB-аксессуара.","USB_NATIVE_INVALID_PARAMETER"=>"USB-компонент Windows отклонил запрос. Подключитесь по Wi-Fi; код ошибки есть в диагностике.","USB_DEVICE_NOT_READY"=>"Windows не смогла открыть телефон по USB. Переподключите кабель; Wi-Fi остаётся доступен.",_=>"USB-соединение завершено. Проверьте кабель и разрешение CatchWave на телефоне."};Render();
+        usbNotice=code switch{"USB_MANUAL_SETUP_REQUIRED"=>L.T("This USB connection needs manual setup. Press «Connect via USB»."),"USB_BINDING_FAILED"=>L.T("Could not set up the USB connection in Windows. Details are in diagnostics."),"USB_BINDING_RESTART_REQUIRED"=>L.T("USB setup complete. Reconnect the cable and try connecting again."),"USB_SETUP_CANCELLED"=>L.T("USB setup cancelled. Wi-Fi remains available."),"USB_DRIVER_MISSING"=>L.T("A cable connection needs the CatchWave USB component."),"USB_DRIVER_RESTART_REQUIRED"=>L.T("Restart the PC to finish installing the USB component. Wi-Fi is available."),"USB_DRIVER_ACCESS_DENIED"=>L.T("Windows does not allow access to the USB component."),"USB_DRIVER_BUSY"=>L.T("The USB component is busy. Try connecting again."),"USB_AOA_UNSUPPORTED"=>L.T("The phone does not support USB accessory mode."),"USB_NATIVE_INVALID_PARAMETER"=>L.T("The Windows USB component rejected the request. Connect via Wi-Fi; the error code is in diagnostics."),"USB_DEVICE_NOT_READY"=>L.T("Windows could not open the phone over USB. Reconnect the cable; Wi-Fi remains available."),_=>L.T("USB connection ended. Check the cable and the CatchWave permission on the phone.")};Render();
         model.Log.Event("USB",code.StartsWith("USB_",StringComparison.Ordinal)?code:"SESSION_ENDED");
     }
     internal void ConfigureUsb(Func<UsbAccessory.Phone,Task> connect,Func<bool> running){
         usb.Click+=async(_,_)=>{
-            if(running()){MessageBox.Show(this,"Телефон уже подключается или подключён по USB.","CatchWave");return;}
+            if(running()){MessageBox.Show(this,L.T("The phone is already connecting or connected via USB."),"CatchWave");return;}
             if(!UsbAccessory.Available){
-                if(MessageBox.Show(this,"Для обычного кабеля нужен подписанный USB-компонент на ПК. Установка может кратко перезапустить USB-устройства и потребовать перезапуска ПК. Отладка Android и USB-модем не нужны. Установить компонент?","CatchWave",MessageBoxButtons.YesNo,MessageBoxIcon.Information,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+                if(MessageBox.Show(this,L.T("A regular cable needs a signed USB component on the PC. Installation may briefly restart USB devices and may require a PC restart. Android debugging and USB tethering are not needed. Install the component?"),"CatchWave",MessageBoxButtons.YesNo,MessageBoxIcon.Information,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
                 usb.Enabled=false;try{await UsbComponent.Install();UsbMessage("USB_DRIVER_RESTART_REQUIRED");}
                 catch(Exception e)when(e is IOException or System.ComponentModel.Win32Exception or System.Net.Http.HttpRequestException or TaskCanceledException){UsbMessage("USB_DRIVER_MISSING");}
                 finally{if(!IsDisposed)usb.Enabled=true;}return;
@@ -252,15 +257,15 @@ internal sealed class HostWindow:Form {
             try{
                 var choices=await Task.Run(UsbAccessory.Phones);
                 if(IsDisposed)return;
-                if(choices.Count==0){MessageBox.Show(this,"Подключите телефон кабелем с передачей данных.","CatchWave");return;}
+                if(choices.Count==0){MessageBox.Show(this,L.T("Connect the phone with a data cable."),"CatchWave");return;}
                 UsbAccessory.Phone selected;
                 if(choices.Count==1)selected=choices[0];else{
-                    using var pick=new Form{Text="Выберите телефон CatchWave",ClientSize=new Size(420,150),StartPosition=FormStartPosition.CenterParent};
+                    using var pick=new Form{Text=L.T("Choose the CatchWave phone"),ClientSize=new Size(420,150),StartPosition=FormStartPosition.CenterParent};
                     var list=new ComboBox{Dock=DockStyle.Top,DropDownStyle=ComboBoxStyle.DropDownList};list.Items.AddRange(choices.Cast<object>().ToArray());list.SelectedIndex=0;
-                    var go=new Button{Text="Подключить",Dock=DockStyle.Bottom,DialogResult=DialogResult.OK};pick.Controls.Add(list);pick.Controls.Add(go);pick.AcceptButton=go;
+                    var go=new Button{Text=L.T("Connect"),Dock=DockStyle.Bottom,DialogResult=DialogResult.OK};pick.Controls.Add(list);pick.Controls.Add(go);pick.AcceptButton=go;
                     if(pick.ShowDialog(this)!=DialogResult.OK)return;selected=(UsbAccessory.Phone)list.SelectedItem!;
                 }
-                usbNotice="Разрешите USB-доступ CatchWave на телефоне.";Render();await connect(selected);
+                usbNotice=L.T("Allow CatchWave USB access on the phone.");Render();await connect(selected);
             }catch(Exception e)when(e is IOException or System.Runtime.InteropServices.SEHException or DllNotFoundException){UsbMessage(e is IOException?e.Message:"USB_OPEN_FAILED");}
             finally{if(!IsDisposed)usb.Enabled=true;}
         };
@@ -270,12 +275,12 @@ internal sealed class HostWindow:Form {
         base.WndProc(ref message);
         if(message.Msg==0x0219&&message.WParam.ToInt64()==0x0007)UsbDevicesChanged?.Invoke();
     }
-    internal void UsbAutoStarting(){usbNotice="Подключаем ранее настроенный USB-порт. Разрешение Android сохраняет приоритет.";Render();}
+    internal void UsbAutoStarting(){usbNotice=L.T("Connecting the previously configured USB port. Android permission keeps priority.");Render();}
     internal void ConfigureAudio(HostAudioSource source,Func<IReadOnlyList<AudioOutput>> available){
         audioSource=source;audioMenu.BackColor=Surface;audioMenu.ForeColor=TextColor;audioMenu.Font=Font;
         IReadOnlyList<AudioOutput>? Read(){
             try{var outputs=available();if(IsDisposed)return null;source.Observe(outputs);Render();return outputs;}
-            catch(Exception e)when(e is System.Runtime.InteropServices.COMException or IOException){if(!IsDisposed){audioHint.Text="Не удалось прочитать аудиовыходы. Повторите выбор.";}return null;}
+            catch(Exception e)when(e is System.Runtime.InteropServices.COMException or IOException){if(!IsDisposed){audioHint.Text=L.T("Could not read audio outputs. Choose again.");}return null;}
         }
         Shown+=(_,_)=>Read();
         audioOutput.Click+=(_,_)=>{
@@ -287,9 +292,9 @@ internal sealed class HostWindow:Form {
                     var item=new ToolStripMenuItem(caption){Enabled=enabled,Checked=source.Selected.Id==next?.Id};
                     item.Click+=(_,_)=>{if(source.Select(next)){model.Log.Event("ROUTE",next==null?"OWNER_SELECTED_DEFAULT_AUDIO":"OWNER_SELECTED_AUDIO");}Render();};audioMenu.Items.Add(item);
                 }
-                Add("Windows по умолчанию",null,outputs.Any(output=>output.IsDefault&&output.Active));audioMenu.Items.Add(new ToolStripSeparator());
+                Add(L.T("Windows default"),null,outputs.Any(output=>output.IsDefault&&output.Active));audioMenu.Items.Add(new ToolStripSeparator());
                 foreach(var output in outputs)Add(output.ToString(),output,output.Active);
-                if(outputs.Count==0)audioMenu.Items.Add(new ToolStripMenuItem("Нет аудиовыходов Windows"){Enabled=false});
+                if(outputs.Count==0)audioMenu.Items.Add(new ToolStripMenuItem(L.T("No Windows audio outputs")){Enabled=false});
                 audioMenu.Show(audioOutput,new Point(0,audioOutput.Height));
             }finally{audioLoading=false;if(!IsDisposed)Render();}
         };
@@ -302,7 +307,7 @@ internal sealed class HostWindow:Form {
             if(!network.Enabled)return;
             network.Enabled=false;IReadOnlyList<HostEndpoint> choices;
             try{choices=available();}
-            catch(System.Net.NetworkInformation.NetworkInformationException){if(!IsDisposed)MessageBox.Show(this,"Не удалось прочитать подключения. Повторите попытку.","CatchWave");return;}
+            catch(System.Net.NetworkInformation.NetworkInformationException){if(!IsDisposed)MessageBox.Show(this,L.T("Could not read connections. Try again."),"CatchWave");return;}
             finally{if(!IsDisposed)network.Enabled=true;}
             if(IsDisposed)return;
             var menu=networkMenu;
@@ -311,17 +316,17 @@ internal sealed class HostWindow:Form {
                 var item=new ToolStripMenuItem(next.ToString()){Checked=next.Address==current.Address};
                 item.Click+=async(_,_)=>{
                     if(next.Address==current.Address)return;
-                    if(model.Snapshot.Live&&MessageBox.Show(this,"Звук остановится. После смены подключения отсканируйте QR снова.","Сменить подключение?",MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
+                    if(model.Snapshot.Live&&MessageBox.Show(this,L.T("Audio will stop. After changing the connection, scan the QR again."),L.T("Change connection?"),MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
                     network.Enabled=false;
-                    try{await select(next);current=next;network.Text=current.ToString();endpoint=$"{next.Address}:{port}";details.Text=$"Адрес: {endpoint}\nСертификат SHA-256:\n{fingerprint}";
+                    try{await select(next);current=next;network.Text=current.ToString();endpoint=$"{next.Address}:{port}";details.Text=string.Format(L.T("Address: {0}\nCertificate SHA-256:\n{1}"),endpoint,fingerprint);
                         using var bytes=new MemoryStream(PairingQr.Png(pairCode(next.Address),4));using var image=Image.FromStream(bytes);var replacement=new Bitmap(image);
                         var previous=picture.Image;picture.Image=replacement;if(previous!=null){assets.Remove(previous);previous.Dispose();}assets.Add(replacement);
                         pairOpen=true;diagnosticOpen=false;Render();
-                    }catch(Exception e)when(e is System.Net.Sockets.SocketException or ArgumentException){MessageBox.Show(this,"Адрес недоступен. Проверьте USB-модем или локальную сеть.","CatchWave");}
+                    }catch(Exception e)when(e is System.Net.Sockets.SocketException or ArgumentException){MessageBox.Show(this,L.T("Address unavailable. Check USB tethering or the local network."),"CatchWave");}
                     catch(OperationCanceledException){}finally{if(!IsDisposed)network.Enabled=true;}
                 };menu.Items.Add(item);
             }
-            if(menu.Items.Count==0)menu.Items.Add(new ToolStripMenuItem("Подключите USB-модем или локальную сеть"){Enabled=false});
+            if(menu.Items.Count==0)menu.Items.Add(new ToolStripMenuItem(L.T("Connect USB tethering or a local network")){Enabled=false});
             menu.Show(network,new Point(0,network.Height));
         };
     }

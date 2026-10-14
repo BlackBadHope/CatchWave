@@ -36,7 +36,7 @@ final class CatchWaveUi {
     static void header(Activity a,LinearLayout body,Runnable back){
         LinearLayout r=new LinearLayout(a);r.setGravity(Gravity.CENTER_VERTICAL);
         TextView brand=text(a,"CatchWave",18,ACCENT,true);r.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        if(back!=null){Button home=button(a,"Главная",false);home.setTextSize(12);home.setOnClickListener(v->back.run());r.addView(home,new LinearLayout.LayoutParams(dp(a,94),dp(a,44)));}
+        if(back!=null){Button home=button(a,L.t("Home"),false);home.setTextSize(12);home.setOnClickListener(v->back.run());r.addView(home,new LinearLayout.LayoutParams(dp(a,94),dp(a,44)));}
         add(body,r,0);
     }
     static void divider(LinearLayout body,int margin){View rule=new View(body.getContext());rule.setBackgroundColor(LINE);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(body.getContext(),1));p.topMargin=dp(body.getContext(),margin);body.addView(rule,p);}

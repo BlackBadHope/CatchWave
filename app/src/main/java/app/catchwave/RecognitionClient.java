@@ -150,7 +150,7 @@ public final class RecognitionClient {
             try {
                 check(scope,budget);
                 if(track==null||track.key.trim().isEmpty()||track.title.trim().isEmpty()||track.artist.trim().isEmpty())
-                    throw new RequestException(Kind.BAD_RESPONSE,"Распознаватель вернул неполное название или исполнителя.");
+                    throw new RequestException(Kind.BAD_RESPONSE,L.t("The recognizer returned an incomplete title or artist."));
                 String existing=cached(track);
                 if(!existing.isEmpty()) { check(scope,budget); return new Resolution(Kind.FOUND,existing,""); }
                 long revision; synchronized (cache) { revision=cache.revision; }
@@ -158,10 +158,10 @@ public final class RecognitionClient {
                 Track candidate=new Track(track.key,track.title,track.artist,track.appleId,track.offsetMs,track.anchorMs,track.timeSkew);
                 String direct=searchYoutube(candidate,scope,budget);
                 check(scope,budget);
-                if(!validMusicUrl(direct))return new Resolution(Kind.NO_MATCH,"","Точная запись в каталоге не найдена.");
+                if(!validMusicUrl(direct))return new Resolution(Kind.NO_MATCH,"",L.t("The exact recording was not found in the catalog."));
                 synchronized (cache) {
                     check(scope,budget);
-                    if(revision!=cache.revision)return new Resolution(Kind.CANCELLED,"","Соответствие сброшено; нужен новый поиск.");
+                    if(revision!=cache.revision)return new Resolution(Kind.CANCELLED,"",L.t("Match reset; a new search is needed."));
                     track.playbackTitle=candidate.playbackTitle; track.playbackArtist=candidate.playbackArtist;
                     cache.links.put(track.key,new CatalogEntry(direct,candidate,cacheClock.getAsLong()));
                 }
@@ -190,11 +190,11 @@ public final class RecognitionClient {
         // An error page or changed protocol is not evidence that a recording does not exist.
         if(response.has("error")||!(response.opt("contents") instanceof JSONObject
             ||response.opt("continuationContents") instanceof JSONObject||response.opt("onResponseReceivedCommands") instanceof JSONArray))
-            throw new RequestException(Kind.BAD_RESPONSE,"Каталог вернул ответ без результатов поиска.");
+            throw new RequestException(Kind.BAD_RESPONSE,L.t("The catalog returned a response without search results."));
         CatalogScan scan=new CatalogScan();
         String found=parseYoutubeSearch(response,track,scan,()->check(scope,budget)); check(scope,budget);
         if(found.isEmpty()&&scan.songItems>0&&scan.readableItems==0)
-            throw new RequestException(Kind.BAD_RESPONSE,"Не удалось прочитать записи в ответе каталога.");
+            throw new RequestException(Kind.BAD_RESPONSE,L.t("Could not read the entries in the catalog response."));
         return found;
     }
 
@@ -296,7 +296,7 @@ public final class RecognitionClient {
     private String fetchTextScoped(String url,JSONObject body,RequestScope scope,CallBudget budget) throws Exception {
         check(scope,budget);
         URL target=new URL(url);
-        if(!allowedHost(target.getHost()))throw new RequestException(Kind.UNAVAILABLE,"Запрос к постороннему серверу заблокирован.");
+        if(!allowedHost(target.getHost()))throw new RequestException(Kind.UNAVAILABLE,L.t("Request to an unrelated server blocked."));
         HttpURLConnection connection=connections.open(target);
         try {
             scope.register(connection); budget.attach(connection); check(scope,budget);
@@ -320,14 +320,14 @@ public final class RecognitionClient {
             }
             check(scope,budget);
             int status=connection.getResponseCode(); check(scope,budget);
-            if(status==429)throw new RequestException(Kind.RATE_LIMITED,"Сервис ограничил запросы. Попробуйте позже (HTTP 429).");
-            if(status!=200)throw new RequestException(Kind.UNAVAILABLE,"Сервис недоступен (HTTP "+status+").");
+            if(status==429)throw new RequestException(Kind.RATE_LIMITED,L.t("The service rate-limited requests. Try again later (HTTP 429)."));
+            if(status!=200)throw new RequestException(Kind.UNAVAILABLE,L.t("Service unavailable (HTTP ")+status+").");
             try(InputStream input=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()) {
                 byte[] buffer=new byte[8192]; int count;
                 while(true) {
                     check(scope,budget); connection.setReadTimeout(Math.min(catalog?3500:8000,budget.remainingMillis()));
                     count=input.read(buffer); check(scope,budget); if(count==-1)break;
-                    if(out.size()+count>MAX_RESPONSE_BYTES)throw new RequestException(Kind.BAD_RESPONSE,"Ответ сервиса слишком большой.");
+                    if(out.size()+count>MAX_RESPONSE_BYTES)throw new RequestException(Kind.BAD_RESPONSE,L.t("The service response is too large."));
                     out.write(buffer,0,count);
                 }
                 return out.toString("UTF-8");
@@ -344,10 +344,10 @@ public final class RecognitionClient {
         if(scope.isCancelled()||Thread.currentThread().isInterrupted()||error instanceof RequestScope.CancelledException)
             return new RequestScope.CancelledException();
         if(budget.expired()||error instanceof SocketTimeoutException)
-            return new RequestException(Kind.TIMEOUT,"Сервис не ответил вовремя. Повторите подхват.",error);
+            return new RequestException(Kind.TIMEOUT,L.t("The service did not respond in time. Try catching again."),error);
         if(error instanceof RequestException)return (RequestException)error;
-        if(error instanceof JSONException)return new RequestException(Kind.BAD_RESPONSE,"Сервис вернул повреждённый ответ.",error);
-        return new RequestException(Kind.UNAVAILABLE,"Не удалось связаться с сервисом. Проверьте соединение.",error);
+        if(error instanceof JSONException)return new RequestException(Kind.BAD_RESPONSE,L.t("The service returned a corrupted response."),error);
+        return new RequestException(Kind.UNAVAILABLE,L.t("Could not reach the service. Check the connection."),error);
     }
 
     /** One elapsed-time limit covers connect, upload and every read, including trickled responses. */
@@ -362,7 +362,7 @@ public final class RecognitionClient {
         }
         synchronized boolean expired() { return timedOut||System.nanoTime()>=deadlineNanos; }
         void check() throws RequestException {
-            if(expired())throw new RequestException(Kind.TIMEOUT,"Сервис не ответил вовремя. Повторите подхват.");
+            if(expired())throw new RequestException(Kind.TIMEOUT,L.t("The service did not respond in time. Try catching again."));
         }
         int remainingMillis() throws RequestException {
             check(); return (int)Math.max(1,TimeUnit.NANOSECONDS.toMillis(deadlineNanos-System.nanoTime()));

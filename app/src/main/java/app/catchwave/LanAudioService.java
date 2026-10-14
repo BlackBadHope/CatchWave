@@ -41,7 +41,7 @@ public final class LanAudioService extends Service implements SensorEventListene
             catch(RuntimeException failure){state.started=false;state.fail(settings,LanConnection.Error.ANDROID_START,LanConnection.Stage.STARTING);}
         }
     }
-    @Override public void onCreate(){
+    @Override public void onCreate(){L.init(this);
         super.onCreate();DiagnosticStore.start(this);settings=new LanSettings(this);sensors=getSystemService(SensorManager.class);manager=getSystemService(AudioManager.class);
         localVolume=new VolumeStep.Device(){
             public int current(){return manager.getStreamVolume(AudioManager.STREAM_MUSIC);}
@@ -50,7 +50,7 @@ public final class LanAudioService extends Service implements SensorEventListene
             public boolean fixed(){return manager.isVolumeFixed();}
             public void adjust(int direction){manager.adjustStreamVolume(AudioManager.STREAM_MUSIC,direction>0?AudioManager.ADJUST_RAISE:AudioManager.ADJUST_LOWER,0);}
         };
-        getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL,"Звук с ПК",NotificationManager.IMPORTANCE_LOW));
+        getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL,L.t("PC audio"),NotificationManager.IMPORTANCE_LOW));
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){
         if(intent==null){stopSelf();return START_NOT_STICKY;}
@@ -68,7 +68,7 @@ public final class LanAudioService extends Service implements SensorEventListene
             if(DEACTIVATE.equals(intent.getAction()))arming.reset("MANUAL_OFF");
             else if(registered&&orientationRegistered&&effectiveControl()&&GestureGate.freshSample(now,lastGyro)&&GestureGate.freshSample(now,lastAccel)&&GestureGate.freshSample(now,lastOrientation)&&arming.activate(now)){
                 DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,"EXPLICIT_ACTIVATION");
-            }else state.update("Активация недоступна","Проверьте соединение, разрешения управления и свежие показания датчиков, затем нажмите «Активировать управление».");
+            }else state.update(L.t("Activation unavailable"),L.t("Check the connection, control permissions and fresh sensor readings, then press «Activate control»."));
             syncArming(now);state.changed();return START_NOT_STICKY;
         }
         if(receiver!=null||usb!=null)return START_NOT_STICKY;state.transport="Wi-Fi";
@@ -107,7 +107,7 @@ public final class LanAudioService extends Service implements SensorEventListene
                     }
                     cancelRecovery();state.connected=true;refreshSensors();main.removeCallbacks(health);main.post(health);});}
                 public void finished(){main.post(()->finishReceiver(generation));}
-                public void ack(boolean accepted){main.post(()->{if(current(generation)){if(accepted)acceptedAcks++;else rejectedAcks++;state.update(accepted?"Команда передана Windows":"Команда отклонена","Windows подтвердил доставку; результат зависит от активного плеера.");}});}
+                public void ack(boolean accepted){main.post(()->{if(current(generation)){if(accepted)acceptedAcks++;else rejectedAcks++;state.update(accepted?L.t("Command sent to Windows"):L.t("Command rejected"),L.t("Windows confirmed delivery; the result depends on the active player."));}});}
             },()->current(generation)&&arming.commands(SystemClock.elapsedRealtime()),arming::revision);
             new Thread(receiver::run,"CatchWave-LAN").start();
     }
@@ -159,7 +159,7 @@ public final class LanAudioService extends Service implements SensorEventListene
         long delay=recovery.retry(code,SystemClock.elapsedRealtime());if(delay<0)return false;
         long generation=transport.next();main.removeCallbacks(health);if(receiver!=null){receiver.close();receiver=null;}
         if(focus!=null){focus.close();focus=null;}
-        state.reset(settings);state.started=true;state.transition(LanConnection.Stage.BUFFERING);state.detail="Восстанавливаем соединение с тем же ПК. «Отключиться» отменяет повтор.";
+        state.reset(settings);state.started=true;state.transition(LanConnection.Stage.BUFFERING);state.detail=L.t("Restoring the connection to the same PC. «Disconnect» cancels the retry.");
         DiagnosticStore.LOG.event(DiagnosticLog.Event.RECONNECT,"WIFI_RETRY",delay);refreshSensors();
         main.postDelayed(()->{if(current(generation)&&recovery.active())startReceiver(generation);},delay);return true;
     }
@@ -228,22 +228,22 @@ public final class LanAudioService extends Service implements SensorEventListene
         state.armed=arming.active(now);state.activationReady=arming.activationReady();commandReady=arming.commands(now)&&engine.neutralReady(now);state.controlReady=commandReady;
         String next=!effectiveControl()?"NO_PERMISSION":!registered||!orientationRegistered?"NO_SENSORS":!arming.active(now)?"NOT_ARMED":!engine.neutralReady(now)?"NEUTRAL_WAIT":"READY";
         if(!next.equals(readiness)){readiness=next;DiagnosticStore.LOG.event(DiagnosticLog.Event.CONTROL,next,state.armed?1:0,engine.neutralRemaining(now));state.changed();}state.controlReadiness=next;
-        String detail="READY".equals(next)?"Команды готовы":"NEUTRAL_WAIT".equals(next)?"Команды ждут нейтраль: ещё "+((engine.neutralRemaining(now)+999)/1000)+" с спокойствия":arming.explanation();
-        state.arming=arming.label(now)+"\n"+detail+"\nКод: "+arming.reason()+" / "+next;
+        String detail="READY".equals(next)?L.t("Commands ready"):"NEUTRAL_WAIT".equals(next)?L.t("Commands are waiting for neutral: ")+((engine.neutralRemaining(now)+999)/1000)+L.t(" s of stillness left"):arming.explanation();
+        state.arming=arming.label(now)+"\n"+detail+L.t("\nCode: ")+arming.reason()+" / "+next;
     }
     private void sensorBreak(long now,String reason){arming.reset(reason);armTransition(now);lastGyro=lastOrientation=lastAccel=-1;updateReadiness(now);}
     private void updateSensorStatus(){
         long now=SystemClock.elapsedRealtime();
         state.sensorCode=!state.connected||!settings.gestures()||(!uiVisible&&!settings.screenOff())?0:!registered?3:!GestureGate.freshSample(now,lastGyro)?4:!orientationRegistered?5:!engine.neutralReady(now)?1:2;
-        if(!state.connected)state.sensorDetail="Датчики выключены — нет свежего соединения";
-        else if(!settings.gestures())state.sensorDetail="Жесты выключены пользователем";
-        else if(!uiVisible&&!settings.screenOff())state.sensorDetail="Жесты приостановлены — CatchWave не виден";
-        else if(!registered)state.sensorDetail="Не удалось включить акселерометр и гироскоп";
-        else if(!GestureGate.freshSample(now,lastGyro))state.sensorDetail="Датчики включены — ожидание свежих измерений";
-        else if(!orientationRegistered)state.sensorDetail="Ориентация недоступна — активация и все команды заблокированы";
-        else if(!engine.neutralReady(now))state.sensorDetail="Нейтраль не готова — держите телефон спокойно 1,5 секунды";
-        else if(!engine.tiltAvailable(now))state.sensorDetail="Нейтраль готова; для наклонов держите верх телефона вверх";
-        else state.sensorDetail="Датчики работают — нейтраль готова";
+        if(!state.connected)state.sensorDetail=L.t("Sensors off — no fresh connection");
+        else if(!settings.gestures())state.sensorDetail=L.t("Gestures turned off by the user");
+        else if(!uiVisible&&!settings.screenOff())state.sensorDetail=L.t("Gestures paused — CatchWave is not visible");
+        else if(!registered)state.sensorDetail=L.t("Could not enable the accelerometer and gyroscope");
+        else if(!GestureGate.freshSample(now,lastGyro))state.sensorDetail=L.t("Sensors on — waiting for fresh readings");
+        else if(!orientationRegistered)state.sensorDetail=L.t("Orientation unavailable — activation and all commands are blocked");
+        else if(!engine.neutralReady(now))state.sensorDetail=L.t("Neutral not ready — hold the phone still for 1.5 seconds");
+        else if(!engine.tiltAvailable(now))state.sensorDetail=L.t("Neutral ready; for tilts keep the top of the phone up");
+        else state.sensorDetail=L.t("Sensors working — neutral ready");
     }
     private void gesture(GestureEngine.Action action){
         if(!registered||receiver==null||!receiver.fresh()||!GestureGate.visibleSession(state.connected,settings.gestures(),uiVisible,settings.screenOff())){DiagnosticStore.LOG.event(DiagnosticLog.Event.GESTURE,"BLOCKED_SESSION",action.ordinal());return;}
@@ -268,8 +268,8 @@ public final class LanAudioService extends Service implements SensorEventListene
         }
         volumeAfter=manager.getStreamVolume(AudioManager.STREAM_MUSIC);
         DiagnosticStore.LOG.event(DiagnosticLog.Event.VOLUME,action.name(),volumeBefore,volumeAfter,mutedVolume,volumeBefore==volumeAfter?0:1);
-        state.update("Громкость телефона: "+volumeBefore+" → "+volumeAfter,
-            manager.isVolumeFixed()?"Android сообщает фиксированную громкость.":"Громкость регулируется локально на Android.");
+        state.update(L.t("Phone volume: ")+volumeBefore+" → "+volumeAfter,
+            manager.isVolumeFixed()?L.t("Android reports fixed volume."):L.t("Volume is adjusted locally on Android."));
     }
     private void adjustHeldVolume(GestureEngine.Action action){
         if(!arming.commands(SystemClock.elapsedRealtime()))return;
@@ -312,8 +312,8 @@ public final class LanAudioService extends Service implements SensorEventListene
     private Notification notification(){
         PendingIntent open=PendingIntent.getActivity(this,24,new Intent(this,LanAudioActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop=PendingIntent.getService(this,25,new Intent(this,LanAudioService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_wave).setContentTitle("CatchWave — "+state.status).setContentText("Нажмите для состояния и управления")
-            .setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Остановить",stop).build()).build();
+        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_wave).setContentTitle("CatchWave — "+state.status).setContentText(L.t("Tap for status and controls"))
+            .setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,L.t("Stop"),stop).build()).build();
     }
     @Override public void onDestroy(){
         destroyed=true;DiagnosticStore.LOG.event(DiagnosticLog.Event.STOP,state.error==LanConnection.Error.NONE?"SERVICE_DESTROYED":state.error.name());arming.reset("SESSION_END");armTransition(SystemClock.elapsedRealtime());tones.close();main.removeCallbacksAndMessages(null);sensors.unregisterListener(this);engine.setEnabled(false,SystemClock.elapsedRealtime());
@@ -322,7 +322,7 @@ public final class LanAudioService extends Service implements SensorEventListene
         state.stopped(settings);
         stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
     }
-    String statistics(){return receiver==null?"Поток не запущен":receiver.statistics();}
+    String statistics(){return receiver==null?L.t("Stream not started"):receiver.statistics();}
     @Override public void onTaskRemoved(Intent intent){stopSelf();super.onTaskRemoved(intent);}
     @Override public IBinder onBind(Intent intent){return null;}
     @Override protected void dump(java.io.FileDescriptor fd,java.io.PrintWriter out,String[] args){

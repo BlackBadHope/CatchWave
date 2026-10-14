@@ -110,10 +110,10 @@ public final class GestureEngine {
     private void emit(Action action,Trigger trigger,long now){
         if(trigger!=Trigger.TILT){tilt.stop();taps=0;pulse=false;shakePeaks=0;shakeSign=0;coolUntil=now+900;}lastAction=action;lastTrigger=trigger;actionCounts[action.ordinal()]++;listener.action(action);
     }
-    public String summary(long now){return "Нейтраль: "+(neutralReady(now)?"готова":"держите спокойно 1,5 с")+
-        (neutralReady(now)&&!tiltAvailable(now)?"; для наклонов держите верх телефона вверх":"")+
-        "\nУдержание наклона: "+(!tiltControl?"управление выключено":tilt.active()?"громкость меняется каждые 0,4 с":"готово")+"\nПостукивания: "+pulseCompleted+"; серия: "+lastSeries+"; сейчас: "+taps+
-        "\nПоследний жест: "+(lastAction==null?"нет":lastAction)+" ("+lastTrigger+")";}
+    public String summary(long now){return L.t("Neutral: ")+(neutralReady(now)?L.t("ready"):L.t("hold still for 1.5 s"))+
+        (neutralReady(now)&&!tiltAvailable(now)?L.t("; for tilts keep the top of the phone up"):"")+
+        L.t("\nTilt hold: ")+(!tiltControl?L.t("control is off"):tilt.active()?L.t("volume changes every 0.4 s"):L.t("idle"))+L.t("\nTaps: ")+pulseCompleted+L.t("; series: ")+lastSeries+L.t("; now: ")+taps+
+        L.t("\nLast gesture: ")+(lastAction==null?L.t("none"):lastAction)+" ("+lastTrigger+")";}
     public void dump(java.io.PrintWriter out,long now){
         out.println("tiltControl="+tiltControl+" tiltRepeating="+tilt.active()+" tiltRepeatMs="+TiltRepeater.REPEAT_MS);
         out.println("postureRebasing="+postureRebasing+" postureRebases="+postureRebases+" flatTiltBlocked="+orientation.flat());

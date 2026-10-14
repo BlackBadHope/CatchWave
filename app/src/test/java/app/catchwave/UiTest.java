@@ -10,6 +10,7 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=34)
 public class UiTest {
+    @org.junit.Before public void russianUi(){L.set(org.robolectric.RuntimeEnvironment.getApplication(),true);}
     @Test public void playerErrorWithoutMetadataStillShowsRecovery()throws Exception{
         SessionModel.INSTANCE.running=false;
         try(var life=Robolectric.buildActivity(MainActivity.class).setup()){

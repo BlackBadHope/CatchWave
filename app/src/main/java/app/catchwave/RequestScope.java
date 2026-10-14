@@ -15,7 +15,7 @@ public final class RequestScope {
         Thread thread=new Thread(r,"CatchWave-request-close"); thread.setDaemon(true); return thread;
     });
     public static final class CancelledException extends IOException {
-        public CancelledException() { super("Запрос отменён."); }
+        public CancelledException() { super(L.t("Request cancelled.")); }
     }
 
     private final Object lock = new Object();
