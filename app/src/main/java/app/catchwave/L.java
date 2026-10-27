@@ -627,5 +627,22 @@ final class L {
         RU.put("Re-catching with the chosen version…", "Повторный подхват выбранной версии…");
         RU.put("Press «Catch» near the music to continue the chosen version, or open it in YouTube Music.", "Нажми «Подхватить» рядом с музыкой, чтобы продолжить выбранную версию, или открой её в YouTube Music.");
         RU.put("Pinned recording applied", "Применена закреплённая запись");
+        RU.put("Offline library: ", "Офлайн-библиотека: ");
+        RU.put(" songs", " песен");
+        RU.put("Songs from your own files are recognized on the phone, without the network. Only you decide when to index them.", "Песни из твоих собственных файлов распознаются на телефоне, без сети. Только ты решаешь, когда их индексировать.");
+        RU.put("Search my library first", "Сначала искать в моей библиотеке");
+        RU.put("Update library index", "Обновить индекс библиотеки");
+        RU.put("Clear library index", "Очистить индекс библиотеки");
+        RU.put("Library index cleared", "Индекс библиотеки очищен");
+        RU.put("Indexing started. Progress is in the notification.", "Индексация запущена. Прогресс — в уведомлении.");
+        RU.put("Music access required", "Нужен доступ к музыке");
+        RU.put("Allow access to audio files to index your library for offline catching.", "Разреши доступ к аудиофайлам, чтобы проиндексировать библиотеку для офлайн-подхвата.");
+        RU.put("CatchWave · Library index", "CatchWave · Индекс библиотеки");
+        RU.put("Reading the music list…", "Читаю список музыки…");
+        RU.put("Indexing your music for offline catching", "Индексирую твою музыку для офлайн-подхвата");
+        RU.put("Indexing stopped", "Индексация остановлена");
+        RU.put("Indexed %d songs (%d new, %d unreadable)", "Проиндексировано %d песен (%d новых, %d нечитаемых)");
+        RU.put("Indexing failed; the collected part is saved", "Индексация прервалась; собранная часть сохранена");
+        RU.put("Local library match; processing=", "Совпадение в локальной библиотеке; обработка=");
     }
 }

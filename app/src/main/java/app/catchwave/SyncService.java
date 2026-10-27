@@ -42,6 +42,7 @@ public final class SyncService extends Service {
     private long sourceLostAt,pauseRequestedAt,captureStarted;
     private String catalogProblem="",prefetchKey="";
     private MomentStore moments;
+    private LibraryStore library;
     private MediaBridge bridge;
     private PowerManager.WakeLock wakeLock;
     private long started,lastMatch,lastSeek,acquireStarted,nativeDeadline,lastLaunchRequest;
@@ -64,7 +65,7 @@ public final class SyncService extends Service {
         }
     };
     @Override public void onCreate(){L.init(this);
-        super.onCreate();bridge=new MediaBridge(this);moments=MomentStore.get(this);
+        super.onCreate();bridge=new MediaBridge(this);moments=MomentStore.get(this);library=LibraryStore.get(this);
         NotificationManager nm=getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL,L.t("CatchWave · Music around you"),NotificationManager.IMPORTANCE_LOW));
         audioManager=getSystemService(AudioManager.class);audioManager.registerAudioDeviceCallback(routeCallback,main);
@@ -194,6 +195,17 @@ public final class SyncService extends Service {
         try {
             if(!active||generation!=captureGeneration)return;
             long requestAt=SystemClock.elapsedRealtime();
+            // The phone's own library answers first: offline, free, nothing leaves the device.
+            if(getSharedPreferences("settings",MODE_PRIVATE).getBoolean("localFirst",true)){
+                Track local=library.recognize(sample,anchor);
+                if(local!=null){
+                    if(!active||generation!=captureGeneration)return;
+                    model.record(L.t("Local library match; processing=")+(SystemClock.elapsedRealtime()-requestAt)+L.t(" ms"));
+                    shortCapturePreferred=true;
+                    main.post(()->{if(generation==captureGeneration)accept(local);});
+                    return;
+                }
+            }
             Track match=client.recognize(sample,anchor,scope);
             if(!active||generation!=captureGeneration)return;
             if(match==null||!match.hasOffset()&&sample.length<96000){shortCapturePreferred=false;model.record(L.t("Fragment without offset; processing=")+(SystemClock.elapsedRealtime()-requestAt)+L.t(" ms"));main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update(L.t("Listening a bit longer"),L.t("Refining the recording and its position from 6 seconds of audio."));});return;}

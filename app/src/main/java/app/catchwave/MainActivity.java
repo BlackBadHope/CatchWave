@@ -202,6 +202,12 @@ public final class MainActivity extends Activity {
         }else model.update(L.t("Recording choice saved"),L.t("Press «Catch» near the music to continue the chosen version, or open it in YouTube Music."));
         render();
     }
+    private String audioPermission(){return Build.VERSION.SDK_INT>=33?Manifest.permission.READ_MEDIA_AUDIO:Manifest.permission.READ_EXTERNAL_STORAGE;}
+    private void startLibraryIndexing(){
+        if(checkSelfPermission(audioPermission())!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{audioPermission()},12);return;}
+        startForegroundService(new Intent(this,LibraryIndexService.class).setAction(LibraryIndexService.START));
+        Toast.makeText(this,L.t("Indexing started. Progress is in the notification."),Toast.LENGTH_SHORT).show();
+    }
     private void calibrateAudio(){
         MediaController c=new MediaBridge(this).controller();
         if(model.measuringAudio||!new CalibrationTarget(c,model.track).valid(c,model)){
@@ -249,6 +255,15 @@ public final class MainActivity extends Activity {
         label.setText(L.t("Correction: ")+getPreferences().getInt("adjustment",0)+L.t(" ms"));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){if(model.running)startService(new Intent(MainActivity.this,SyncService.class).setAction(SyncService.ADJUST));}public void onProgressChanged(SeekBar b,int p,boolean user){int value=(p-20)*100;label.setText(L.t("Correction: ")+value+L.t(" ms"));if(user)getPreferences().edit().putInt("adjustment",value).apply();}});add(box,seek,12);
         Button access=button(L.t("Player access"),PANEL,TEXT);access.setOnClickListener(v->openNotificationSettings());add(box,access,12);
+        add(box,text(L.t("Offline library: ")+LibraryStore.get(this).songCount()+L.t(" songs")+(LibraryIndexService.running?" · "+LibraryIndexService.state:LibraryIndexService.state.isEmpty()?"":" · "+LibraryIndexService.state),13,MUTED),12);
+        add(box,text(L.t("Songs from your own files are recognized on the phone, without the network. Only you decide when to index them."),12,MUTED),2);
+        CheckBox localFirst=new CheckBox(this);localFirst.setText(L.t("Search my library first"));localFirst.setTextColor(TEXT);
+        localFirst.setChecked(getPreferences().getBoolean("localFirst",true));
+        localFirst.setOnCheckedChangeListener((b,checked)->getPreferences().edit().putBoolean("localFirst",checked).apply());add(box,localFirst,6);
+        Button buildIndex=button(L.t("Update library index"),PANEL,TEXT);buildIndex.setEnabled(!LibraryIndexService.running);
+        buildIndex.setOnClickListener(v->startLibraryIndexing());add(box,buildIndex,6);
+        Button clearIndex=button(L.t("Clear library index"),PANEL,MUTED);clearIndex.setEnabled(!LibraryIndexService.running&&LibraryStore.get(this).songCount()>0);
+        clearIndex.setOnClickListener(v->{LibraryStore.get(this).clear();LibraryIndexService.state="";Toast.makeText(this,L.t("Library index cleared"),Toast.LENGTH_SHORT).show();});add(box,clearIndex,6);
         CheckBox compatible=new CheckBox(this);compatible.setText(L.t("Allow opening YouTube Music on failure"));compatible.setTextColor(TEXT);compatible.setChecked(getPreferences().getBoolean("compatibleLaunch",false));
         compatible.setOnCheckedChangeListener((b,checked)->getPreferences().edit().putBoolean("compatibleLaunch",checked).apply());add(box,compatible,10);
         add(box,text(L.t("If background launch fails, opens the found recording and asks to return here after setting the timecode. Launching from the background requires opening «CatchWave»."),12,MUTED),4);
@@ -303,6 +318,11 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
         super.onRequestPermissionsResult(code,permissions,results);
         if(code==10&&(results.length==0||results[0]!=PackageManager.PERMISSION_GRANTED)){pendingStart=false;model.update(L.t("Microphone required"),L.t("Allow audio recording to recognize music."));return;}
+        if(code==12){
+            if(results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)startLibraryIndexing();
+            else model.update(L.t("Music access required"),L.t("Allow access to audio files to index your library for offline catching."));
+            return;
+        }
         if(pendingStart)begin();
     }
     @Override protected void onResume(){super.onResume();visible=true;LanAudioService.uiVisible=true;LanAudioService.maybeAutoStart(this);if(LanState.INSTANCE.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.REFRESH));if(playerLaunch!=null)playerLaunch.cancel();render();playerHandler.removeCallbacks(playerTick);playerHandler.post(playerTick);}
