@@ -600,5 +600,24 @@ final class L {
         RU.put("CatchWave Host found over the cable. The connection needs neither debugging nor USB tethering.", "CatchWave Host найден по кабелю. Подключение не требует отладки или USB-модема.");
         RU.put("USB connection", "Подключение по USB");
         RU.put("USB access not allowed", "USB-доступ не разрешён");
+        RU.put("Music moments", "Музыкальные моменты");
+        RU.put("Every catch is saved here: the song, the moment inside it and the time. The list lives only on this phone.", "Каждый подхват сохраняется здесь: песня, место внутри неё и время. Список живёт только на этом телефоне.");
+        RU.put("No moments yet. Catch a song on the «Music around you» screen and it will appear here.", "Моментов пока нет. Поймай песню на экране «Музыка вокруг» — и она появится здесь.");
+        RU.put("Share list", "Поделиться списком");
+        RU.put("Clear", "Очистить");
+        RU.put("At ", "На ");
+        RU.put("Favorite", "Избранное");
+        RU.put("Open", "Открыть");
+        RU.put("Open in YouTube Music", "Открыть в YouTube Music");
+        RU.put("Note", "Заметка");
+        RU.put("Edit note", "Изменить заметку");
+        RU.put("Share this moment", "Поделиться этим моментом");
+        RU.put("Delete", "Удалить");
+        RU.put("No app can open this link.", "Нет приложения, которое может открыть эту ссылку.");
+        RU.put("Where and why you caught it", "Где и почему ты её поймал");
+        RU.put("Save", "Сохранить");
+        RU.put("Clear the whole history?", "Очистить всю историю?");
+        RU.put("Every moment, favorite and note will be deleted from this phone. This cannot be undone.", "Все моменты, избранное и заметки будут удалены с этого телефона. Это нельзя отменить.");
+        RU.put("Share moments", "Поделиться моментами");
     }
 }

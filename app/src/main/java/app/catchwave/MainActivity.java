@@ -66,7 +66,9 @@ public final class MainActivity extends Activity {
         open=button(L.t("Open YouTube Music"),PANEL,TEXT);open.setOnClickListener(v->openTrack());add(body,open,10);
         reject=button(L.t("This is a different version"),PANEL,MUTED);reject.setOnClickListener(v->startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT)));add(body,reject,8);
         setup=text("",12,MUTED);setup.setGravity(Gravity.CENTER);setup.setPadding(0,dp(8),0,0);setup.setOnClickListener(v->permissionsInfo());add(body,setup,8);
-        CatchWaveUi.divider(body,20);Button options=button(L.t("Recognition settings"),PANEL,TEXT);options.setOnClickListener(v->settings());add(body,options,16);
+        CatchWaveUi.divider(body,20);
+        Button moments=button(L.t("Music moments"),PANEL,TEXT);moments.setOnClickListener(v->startActivity(new Intent(this,MomentsActivity.class)));add(body,moments,16);
+        Button options=button(L.t("Recognition settings"),PANEL,TEXT);options.setOnClickListener(v->settings());add(body,options,10);
         TextView footer=text(AppIdentity.label()+L.t(" · experimental version"),11,MUTED);footer.setGravity(Gravity.CENTER);add(body,footer,18);
     }
     private android.content.SharedPreferences getPreferences(){return getSharedPreferences("settings",MODE_PRIVATE);}

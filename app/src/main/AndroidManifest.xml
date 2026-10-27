@@ -27,6 +27,7 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
         <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTop" android:configChanges="orientation|screenSize"/>
+        <activity android:name=".MomentsActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
         <activity android:name=".LanAudioActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
         <activity android:name=".PairingScanActivity" android:exported="false"/>
         <activity android:name=".UsbConnectActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
