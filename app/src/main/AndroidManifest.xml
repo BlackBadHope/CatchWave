@@ -13,6 +13,10 @@
     <!-- Qualifies connectedDevice FGS; this app never changes WiFi state. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- Offline library catching: read the user's own music to index it locally. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
@@ -27,6 +31,7 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
         <activity android:name=".MainActivity" android:exported="false" android:launchMode="singleTop" android:configChanges="orientation|screenSize"/>
+        <activity android:name=".MomentsActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
         <activity android:name=".LanAudioActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
         <activity android:name=".PairingScanActivity" android:exported="false"/>
         <activity android:name=".UsbConnectActivity" android:exported="false" android:configChanges="orientation|screenSize"/>
@@ -38,6 +43,7 @@
         <service android:name=".LanAudioService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaPlayback" android:stopWithTask="true"/>
         <service android:name=".SyncService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" android:stopWithTask="true"/>
         <service android:name=".AudioCalibrationService" android:exported="false" android:foregroundServiceType="microphone|mediaProjection" android:stopWithTask="true"/>
+        <service android:name=".LibraryIndexService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
         <service android:name=".MediaAccessService" android:exported="true" android:label="CatchWave — управление YouTube Music" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
         </service>

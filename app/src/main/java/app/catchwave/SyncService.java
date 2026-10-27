@@ -41,6 +41,8 @@ public final class SyncService extends Service {
     private boolean sourceResumeReady;
     private long sourceLostAt,pauseRequestedAt,captureStarted;
     private String catalogProblem="",prefetchKey="";
+    private MomentStore moments;
+    private LibraryStore library;
     private MediaBridge bridge;
     private PowerManager.WakeLock wakeLock;
     private long started,lastMatch,lastSeek,acquireStarted,nativeDeadline,lastLaunchRequest;
@@ -63,7 +65,7 @@ public final class SyncService extends Service {
         }
     };
     @Override public void onCreate(){L.init(this);
-        super.onCreate();bridge=new MediaBridge(this);
+        super.onCreate();bridge=new MediaBridge(this);moments=MomentStore.get(this);library=LibraryStore.get(this);
         NotificationManager nm=getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL,L.t("CatchWave · Music around you"),NotificationManager.IMPORTANCE_LOW));
         audioManager=getSystemService(AudioManager.class);audioManager.registerAudioDeviceCallback(routeCallback,main);
@@ -72,7 +74,7 @@ public final class SyncService extends Service {
         if(intent==null)return START_NOT_STICKY;
         if(OPEN_STARTED.equals(intent.getAction())){if(active){compatibleOpening=true;acquireStarted=lastLaunchRequest=SystemClock.elapsedRealtime();claimQueue(bridge.controller());model.record(L.t("Opening the selected recording through the YouTube Music screen"));}else stopSelf();return START_NOT_STICKY;}
         if(OPEN_FAILED.equals(intent.getAction())){finish(L.t("Could not open YouTube Music"),L.t("Check that the player is installed and try catching again."));return START_NOT_STICKY;}
-        if(REJECT.equals(intent.getAction())){pauseOwned();if(model.track!=null)client.invalidate(model.track);model.aligned=false;model.launchTicket++;finish(L.t("This is a different recording"),L.t("The wrong match was removed from the cache. Try again on another fragment or choose the right version in YouTube Music."));return START_NOT_STICKY;}
+        if(REJECT.equals(intent.getAction())){pauseOwned();if(model.track!=null){client.invalidate(model.track);MatchPins.remove(this,model.track.key);moments.removeNewest(model.track.key);}model.aligned=false;model.launchTicket++;finish(L.t("This is a different recording"),L.t("The wrong match was removed from the cache. Try again on another fragment or choose the right version in YouTube Music."));return START_NOT_STICKY;}
         if(USER_PAUSE.equals(intent.getAction())||USER_HOLD.equals(intent.getAction())||USER_RESUME.equals(intent.getAction())){
             if(active)userControl(intent.getAction());else stopSelf();return START_NOT_STICKY;
         }
@@ -88,6 +90,7 @@ public final class SyncService extends Service {
         if(live&&!MediaBridge.headphones(this)){model.update(L.t("Connect headphones"),L.t("Live Sync must hear the external source, not the phone speaker."));stopSelf();return START_NOT_STICKY;}
         active=true;captureDone=false;model.running=true;model.live=live;model.track=null;model.aligned=false;model.needsOpen=false;model.manualHold=false;model.errorMs=Long.MAX_VALUE;
         model.resetTrace();model.record(L.t("Session started; correction ")+getSharedPreferences("settings",MODE_PRIVATE).getInt("adjustment",0)+L.t(" ms"));
+        resolver.submit(moments::size); // Load the moments file off the main thread before the first confirmation.
         model.progress=0;started=lastLoud=SystemClock.elapsedRealtime();lastMatch=0;
         try {
             startForeground(NOTIFICATION,notification(L.t("Listening to music nearby…")),ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
@@ -192,6 +195,17 @@ public final class SyncService extends Service {
         try {
             if(!active||generation!=captureGeneration)return;
             long requestAt=SystemClock.elapsedRealtime();
+            // The phone's own library answers first: offline, free, nothing leaves the device.
+            if(getSharedPreferences("settings",MODE_PRIVATE).getBoolean("localFirst",true)){
+                Track local=library.recognize(sample,anchor);
+                if(local!=null){
+                    if(!active||generation!=captureGeneration)return;
+                    model.record(L.t("Local library match; processing=")+(SystemClock.elapsedRealtime()-requestAt)+L.t(" ms"));
+                    shortCapturePreferred=true;
+                    main.post(()->{if(generation==captureGeneration)accept(local);});
+                    return;
+                }
+            }
             Track match=client.recognize(sample,anchor,scope);
             if(!active||generation!=captureGeneration)return;
             if(match==null||!match.hasOffset()&&sample.length<96000){shortCapturePreferred=false;model.record(L.t("Fragment without offset; processing=")+(SystemClock.elapsedRealtime()-requestAt)+L.t(" ms"));main.post(()->{if(active&&generation==captureGeneration&&model.track==null)model.update(L.t("Listening a bit longer"),L.t("Refining the recording and its position from 6 seconds of audio."));});return;}
@@ -227,6 +241,12 @@ public final class SyncService extends Service {
         }
         match=confirmation.track;
         if(match.youtubeUrl==null||match.youtubeUrl.isEmpty())match.youtubeUrl=client.cached(match);
+        MatchPins.Pin pinned=MatchPins.get(this,match.key);
+        if(pinned!=null&&!pinned.url.equals(match.youtubeUrl)){
+            client.pin(match,new RecognitionClient.Candidate(pinned.title.isEmpty()?match.playbackTitle:pinned.title,
+                pinned.artist.isEmpty()?match.playbackArtist:pinned.artist,pinned.url));
+            model.record(L.t("Pinned recording applied"));
+        }
         if(!model.live)captureDone=true;
         boolean changed=resumeFresh||waitingNextSource||model.track==null||!model.track.key.equals(match.key);
         if(changed||waitingNextSource){closeEndGuard();waitingNextSource=false;}
@@ -235,6 +255,7 @@ public final class SyncService extends Service {
         if(model.manualHold){model.update(L.t("Manual control"),L.t("A pause or seek suspended sync. Press «Sync» to continue."));return;}
         resumeFresh=false;
         if(changed){
+            moments.add(match.key,match.title,match.artist,match.youtubeUrl,match.positionAt(now,0));
             acquireStarted=now;seekAttempts=0;lastSeek=0;initialSeek=false;awaitingSeekSettle=false;pausedByUs=false;playRequested=false;resolveRequested=false;nativeDeadline=0;model.aligned=false;model.errorMs=Long.MAX_VALUE;catalogProblem="";sourceLostAt=pauseRequestedAt=0;sourceResumeReady=false;
             boolean remotelyRequested=false;
             if(capturePause!=null)capturePause.release();
@@ -287,6 +308,7 @@ public final class SyncService extends Service {
                     finish(result.kind==RecognitionClient.Kind.NO_MATCH?L.t("No matching recording found"):L.t("Recording search unavailable"),catalogProblem+L.t(" Press «Catch» to take a new measurement."));return;
                 }
                 model.track.youtubeUrl=resolved;
+                if(!resolved.isEmpty())moments.updateUrl(match.key,resolved);
                 model.track.playbackTitle=match.playbackTitle;model.track.playbackArtist=match.playbackArtist;
                 model.record(L.t("Catalog: ")+match.playbackTitle+" / "+match.playbackArtist+L.t("; link=")+resolved);
                 if(!resolved.isEmpty()&&getSharedPreferences("settings",MODE_PRIVATE).getBoolean("compatibleLaunch",false)){
@@ -518,6 +540,7 @@ public final class SyncService extends Service {
         resolver.submit(()->{
             RecognitionClient.Resolution result=client.resolveResult(match,scope);
             if(!active||generation!=captureGeneration)return;
+            if(result.kind==RecognitionClient.Kind.FOUND&&result.url!=null&&!result.url.isEmpty())moments.updateUrl(match.key,result.url);
             model.record(L.t("Catalog in advance: ")+result.kind+(result.url==null||result.url.isEmpty()?"":" "+result.url));
         });
     }

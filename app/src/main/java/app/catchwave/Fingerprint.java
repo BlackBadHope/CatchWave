@@ -84,7 +84,7 @@ public final class Fingerprint {
     }
     private static void putInt(ByteArrayOutputStream o,int n) { for(int i=0;i<4;i++) o.write(n>>>(8*i)); }
     private static void putShort(ByteArrayOutputStream o,int n) { o.write(n); o.write(n>>>8); }
-    private static void transform(double[] real,double[] imaginary) {
+    static void transform(double[] real,double[] imaginary) {
         int n=real.length;
         for(int i=1,j=0;i<n;i++) {
             int bit=n>>>1; for(; (j&bit)!=0;bit>>>=1) j^=bit; j^=bit;
