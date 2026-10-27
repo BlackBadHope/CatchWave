@@ -53,6 +53,7 @@ Commands require a separate approval of the phone's key on the PC. A QR code gra
 - **Recognize nearby music.** Hear a song in a café or on someone else's speaker: CatchWave fingerprints a short microphone sample on the phone and identifies it.
 - **Continue in YouTube Music.** Playback opens in YouTube Music at the estimated moment of the song.
 - **Live Sync** (with headphones) keeps the position aligned.
+- **Music moments.** Every confirmed catch is kept in a private on-phone history: the song, the moment inside it and the time, with favorites, notes and shareable links. Nothing is uploaded.
 
 ### 🔒 Private by design
 - **Encrypted and pinned.** Audio and commands travel over TLS with the PC's certificate pinned by the QR scan.
