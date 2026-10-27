@@ -6,7 +6,9 @@ import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
@@ -26,6 +28,13 @@ public final class RecognitionClient {
             this.kind=kind; this.url=url; this.message=message;
         }
     }
+
+    /** One playable catalog entry offered to the user when the automatic pick is wrong. */
+    public static final class Candidate {
+        public final String title,artist,url;
+        public Candidate(String title,String artist,String url){this.title=title;this.artist=artist;this.url=url;}
+    }
+    static final int CANDIDATE_LIMIT=6;
 
     public static final class RequestException extends IOException {
         public final Kind kind;
@@ -51,9 +60,16 @@ public final class RecognitionClient {
             this.url=url; title=t.playbackTitle; artist=t.playbackArtist; this.storedAt=storedAt;
         }
     }
+    private static final class CandidateEntry {
+        final java.util.List<Candidate> list; final long storedAt;
+        CandidateEntry(java.util.List<Candidate> list,long storedAt){this.list=list;this.storedAt=storedAt;}
+    }
     static final class CacheState {
         final Map<String,CatalogEntry> links=new LinkedHashMap<>(100,.75f,true) {
             @Override protected boolean removeEldestEntry(Map.Entry<String,CatalogEntry> entry) { return size()>CACHE_LIMIT; }
+        };
+        final Map<String,CandidateEntry> candidates=new LinkedHashMap<>(100,.75f,true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<String,CandidateEntry> entry) { return size()>CACHE_LIMIT; }
         };
         long revision;
     }
@@ -192,22 +208,71 @@ public final class RecognitionClient {
             ||response.opt("continuationContents") instanceof JSONObject||response.opt("onResponseReceivedCommands") instanceof JSONArray))
             throw new RequestException(Kind.BAD_RESPONSE,L.t("The catalog returned a response without search results."));
         CatalogScan scan=new CatalogScan();
-        String found=parseYoutubeSearch(response,track,scan,()->check(scope,budget)); check(scope,budget);
-        if(found.isEmpty()&&scan.songItems>0&&scan.readableItems==0)
+        parseYoutubeSearch(response,track,scan,()->check(scope,budget)); check(scope,budget);
+        storeCandidates(track.key,scan.candidates);
+        if(scan.found.isEmpty()&&scan.songItems>0&&scan.readableItems==0)
             throw new RequestException(Kind.BAD_RESPONSE,L.t("Could not read the entries in the catalog response."));
-        return found;
+        return scan.found;
+    }
+
+    private void storeCandidates(String key,List<Candidate> list){
+        if(key==null||key.trim().isEmpty()||list.isEmpty())return;
+        synchronized (cache) { cache.candidates.put(key,new CandidateEntry(new ArrayList<>(list),cacheClock.getAsLong())); }
+    }
+    /** Alternatives remembered from the last search for this recording; empty when none or expired. */
+    public List<Candidate> cachedCandidates(Track track) {
+        if(track==null)return java.util.Collections.emptyList();
+        synchronized (cache) {
+            CandidateEntry entry=cache.candidates.get(track.key);
+            if(entry==null)return java.util.Collections.emptyList();
+            long age=cacheClock.getAsLong()-entry.storedAt;
+            if(age<0||age>=CACHE_TTL_MS) { cache.candidates.remove(track.key); return java.util.Collections.emptyList(); }
+            return new ArrayList<>(entry.list);
+        }
+    }
+    /** Blocking: returns remembered alternatives, or searches once to collect them. Failure means an empty list. */
+    public List<Candidate> fetchCandidates(Track track,RequestScope scope) {
+        List<Candidate> known=cachedCandidates(track);
+        if(!known.isEmpty()||track==null||track.key.trim().isEmpty()||track.title.trim().isEmpty()||track.artist.trim().isEmpty())return known;
+        try(CallBudget budget=new CallBudget(catalogTimeoutMs)) {
+            Track copy=new Track(track.key,track.title,track.artist,track.appleId,track.offsetMs,track.anchorMs,track.timeSkew);
+            searchYoutube(copy,scope,budget);
+        } catch(Exception ignored) { /* The chooser falls back to a plain rejection. */ }
+        return cachedCandidates(track);
+    }
+    /** The user's explicit recording choice replaces the automatic pick and cancels in-flight lookups. */
+    public void pin(Track track,Candidate chosen) {
+        if(track==null||chosen==null||!validMusicUrl(chosen.url))return;
+        synchronized (cache) {
+            track.youtubeUrl=chosen.url;track.playbackTitle=chosen.title;track.playbackArtist=chosen.artist;
+            cache.links.put(track.key,new CatalogEntry(chosen.url,track,cacheClock.getAsLong()));
+            cache.revision++;
+        }
     }
 
     public static String parseYoutubeSearch(Object node,Track target) throws Exception {
         BoundedJson.validate(node,()->{});
-        return parseYoutubeSearch(node,target,new CatalogScan(),()->{});
+        CatalogScan scan=new CatalogScan();
+        parseYoutubeSearch(node,target,scan,()->{});
+        return scan.found;
     }
-    private static final class CatalogScan { int songItems,readableItems,steps; }
-    private static String parseYoutubeSearch(Object node,Track target,CatalogScan scan,BoundedJson.Check check) throws Exception {
-        if((++scan.steps&127)==0)check.run();
-        if(node instanceof JSONArray array)for(int i=0;i<array.length();i++) {
-            String found=parseYoutubeSearch(array.opt(i),target,scan,check); if(!found.isEmpty())return found;
+    private static final class CatalogScan {
+        int songItems,readableItems,steps;
+        String found="";
+        final java.util.List<Candidate> candidates=new ArrayList<>();
+        boolean complete(){return !found.isEmpty()&&candidates.size()>=CANDIDATE_LIMIT;}
+        boolean knownId(String id){
+            for(Candidate c:candidates)if(c.url.endsWith(id))return true;
+            return false;
         }
+    }
+    /** Full traversal: the automatic pick stays the first strict match, while playable
+     *  alternatives keep collecting so a wrong pick can be corrected without a new search. */
+    private static void parseYoutubeSearch(Object node,Track target,CatalogScan scan,BoundedJson.Check check) throws Exception {
+        if(scan.complete())return;
+        if((++scan.steps&127)==0)check.run();
+        if(node instanceof JSONArray array)for(int i=0;i<array.length()&&!scan.complete();i++)
+            parseYoutubeSearch(array.opt(i),target,scan,check);
         if(node instanceof JSONObject object) {
             JSONObject item=object.optJSONObject("musicResponsiveListItemRenderer");
             if(item!=null) {
@@ -217,19 +282,20 @@ public final class RecognitionClient {
                 if(id.matches("[A-Za-z0-9_-]{11}")&&columns!=null&&columns.length()>=2) {
                     check.run();String title=columnText(columns,0,check), artist=columnText(columns,1,check).split("[•·]",2)[0].trim();
                     if(!title.isEmpty()&&!artist.isEmpty())scan.readableItems++;
-                    if(!title.isEmpty()&&!artist.isEmpty()
-                        &&!"MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT".equals(item.optString("musicItemRendererDisplayPolicy"))
-                        &&target.matches(title,artist)) {
+                    boolean playable=!title.isEmpty()&&!artist.isEmpty()
+                        &&!"MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT".equals(item.optString("musicItemRendererDisplayPolicy"));
+                    if(playable&&scan.candidates.size()<CANDIDATE_LIMIT&&!scan.knownId(id))
+                        scan.candidates.add(new Candidate(title,artist,"https://music.youtube.com/watch?v="+id));
+                    if(playable&&scan.found.isEmpty()&&target.matches(title,artist)) {
                         check.run();
-                        target.playbackTitle=title; target.playbackArtist=artist; return "https://music.youtube.com/watch?v="+id;
+                        target.playbackTitle=title; target.playbackArtist=artist; scan.found="https://music.youtube.com/watch?v="+id;
                     }
                     check.run();
                 }
             }
             java.util.Iterator<String> keys=object.keys();
-            while(keys.hasNext()) { String found=parseYoutubeSearch(object.opt(keys.next()),target,scan,check); if(!found.isEmpty())return found; }
+            while(keys.hasNext()&&!scan.complete())parseYoutubeSearch(object.opt(keys.next()),target,scan,check);
         }
-        return "";
     }
 
     private static String columnText(JSONArray columns,int index,BoundedJson.Check check)throws java.io.IOException {
