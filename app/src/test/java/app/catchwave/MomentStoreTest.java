@@ -66,6 +66,23 @@ public class MomentStoreTest {
         assertEquals(0,store().size());
     }
 
+    @Test public void resyncOfTheNewestRecordingRefreshesItInsteadOfDuplicating()throws Exception{
+        MomentStore store=store();
+        Moment first=store.add("same","Song","Artist","",10_000);
+        store.setFavorite(first.id,true);
+        store.setNote(first.id,"keep me");
+        Moment refreshed=store.add("same","Song","Artist","https://music.youtube.com/watch?v=abcdefghijk",95_000);
+        assertEquals(1,store.size());
+        assertEquals(first.id,refreshed.id);
+        assertEquals(95_000,refreshed.positionMs);
+        assertTrue(refreshed.favorite);
+        assertEquals("keep me",refreshed.note);
+        assertEquals("https://music.youtube.com/watch?v=abcdefghijk",refreshed.youtubeUrl);
+        store.add("other","Another","Artist","",0);
+        store.add("same","Song","Artist","",20_000);
+        assertEquals(3,store.size());
+    }
+
     @Test public void rejectRemovesOnlyTheNewestEntryOfThatRecording()throws Exception{
         MomentStore store=store();
         store.add("same","Song","Artist","",1_000);
@@ -82,13 +99,13 @@ public class MomentStoreTest {
     @Test public void lateCatalogLinkFillsOnlyEmptyUrlsOfThatRecording()throws Exception{
         MomentStore store=store();
         store.add("k","Song","Artist","",0);
-        store.add("k","Song","Artist","https://music.youtube.com/watch?v=existingurl",0);
         store.add("z","Other","Artist","",0);
+        store.add("k","Song","Artist","https://music.youtube.com/watch?v=existingurl",0);
         assertEquals(0,store.updateUrl("k","not a url"));
         assertEquals(1,store.updateUrl("k","https://music.youtube.com/watch?v=abcdefghijk"));
         List<Moment> all=store.all();
-        assertEquals("",all.get(0).youtubeUrl);
-        assertEquals("https://music.youtube.com/watch?v=existingurl",all.get(1).youtubeUrl);
+        assertEquals("https://music.youtube.com/watch?v=existingurl",all.get(0).youtubeUrl);
+        assertEquals("",all.get(1).youtubeUrl);
         assertEquals("https://music.youtube.com/watch?v=abcdefghijk",all.get(2).youtubeUrl);
     }
 

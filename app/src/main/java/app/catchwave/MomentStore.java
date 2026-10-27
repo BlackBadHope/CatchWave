@@ -45,6 +45,13 @@ final class MomentStore {
     synchronized Moment add(String key,String title,String artist,String youtubeUrl,long positionMs){
         load();
         long now=wallClock.getAsLong();
+        // Re-syncing the song still playing refreshes one entry; a later return to it is a new moment.
+        if(!moments.isEmpty()&&moments.get(0).key.equals(key)){
+            Moment previous=moments.remove(0);
+            String url=RecognitionClient.validMusicUrl(youtubeUrl)?youtubeUrl:previous.youtubeUrl;
+            Moment refreshed=new Moment(previous.id,key,title,artist,url,positionMs,now,previous.favorite,previous.note);
+            moments.add(0,refreshed);persist();return refreshed;
+        }
         long id=now;
         for(Moment m:moments)if(m.id>=id)id=m.id+1;
         Moment moment=new Moment(id,key,title,artist,youtubeUrl,positionMs,now,false,"");
