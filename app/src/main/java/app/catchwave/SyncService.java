@@ -73,7 +73,7 @@ public final class SyncService extends Service {
         if(intent==null)return START_NOT_STICKY;
         if(OPEN_STARTED.equals(intent.getAction())){if(active){compatibleOpening=true;acquireStarted=lastLaunchRequest=SystemClock.elapsedRealtime();claimQueue(bridge.controller());model.record(L.t("Opening the selected recording through the YouTube Music screen"));}else stopSelf();return START_NOT_STICKY;}
         if(OPEN_FAILED.equals(intent.getAction())){finish(L.t("Could not open YouTube Music"),L.t("Check that the player is installed and try catching again."));return START_NOT_STICKY;}
-        if(REJECT.equals(intent.getAction())){pauseOwned();if(model.track!=null){client.invalidate(model.track);moments.removeNewest(model.track.key);}model.aligned=false;model.launchTicket++;finish(L.t("This is a different recording"),L.t("The wrong match was removed from the cache. Try again on another fragment or choose the right version in YouTube Music."));return START_NOT_STICKY;}
+        if(REJECT.equals(intent.getAction())){pauseOwned();if(model.track!=null){client.invalidate(model.track);MatchPins.remove(this,model.track.key);moments.removeNewest(model.track.key);}model.aligned=false;model.launchTicket++;finish(L.t("This is a different recording"),L.t("The wrong match was removed from the cache. Try again on another fragment or choose the right version in YouTube Music."));return START_NOT_STICKY;}
         if(USER_PAUSE.equals(intent.getAction())||USER_HOLD.equals(intent.getAction())||USER_RESUME.equals(intent.getAction())){
             if(active)userControl(intent.getAction());else stopSelf();return START_NOT_STICKY;
         }
@@ -229,6 +229,12 @@ public final class SyncService extends Service {
         }
         match=confirmation.track;
         if(match.youtubeUrl==null||match.youtubeUrl.isEmpty())match.youtubeUrl=client.cached(match);
+        MatchPins.Pin pinned=MatchPins.get(this,match.key);
+        if(pinned!=null&&!pinned.url.equals(match.youtubeUrl)){
+            client.pin(match,new RecognitionClient.Candidate(pinned.title.isEmpty()?match.playbackTitle:pinned.title,
+                pinned.artist.isEmpty()?match.playbackArtist:pinned.artist,pinned.url));
+            model.record(L.t("Pinned recording applied"));
+        }
         if(!model.live)captureDone=true;
         boolean changed=resumeFresh||waitingNextSource||model.track==null||!model.track.key.equals(match.key);
         if(changed||waitingNextSource){closeEndGuard();waitingNextSource=false;}
