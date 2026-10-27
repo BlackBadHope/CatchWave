@@ -88,6 +88,19 @@ final class MomentStore {
         for(int i=0;i<moments.size();i++)if(moments.get(i).key.equals(key)){moments.remove(i);persist();return true;}
         return false;
     }
+    /** The user picked the right recording: every entry of this song now points at it. */
+    synchronized int replaceUrl(String key,String url){
+        load();
+        if(!RecognitionClient.validMusicUrl(url))return 0;
+        int updated=0;
+        for(int i=0;i<moments.size();i++){
+            Moment m=moments.get(i);
+            if(!m.key.equals(key)||url.equals(m.youtubeUrl))continue;
+            m.youtubeUrl=url;updated++;
+        }
+        if(updated>0)persist();
+        return updated;
+    }
     /** A late catalog answer fills in links for entries caught without one. */
     synchronized int updateUrl(String key,String url){
         load();

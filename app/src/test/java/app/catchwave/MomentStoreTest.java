@@ -129,6 +129,19 @@ public class MomentStoreTest {
         assertEquals(0,store().size());
     }
 
+    @Test public void pickedRecordingReplacesLinksOfEveryEntryOfThatSong()throws Exception{
+        MomentStore store=store();
+        store.add("k","Song","Artist","https://music.youtube.com/watch?v=wrongwrong1",0);
+        store.add("z","Other","Artist","https://music.youtube.com/watch?v=otherother1",0);
+        store.add("k","Song","Artist","",0);
+        assertEquals(0,store.replaceUrl("k","garbage"));
+        assertEquals(2,store.replaceUrl("k","https://music.youtube.com/watch?v=abcdefghijk"));
+        List<Moment> all=store.all();
+        assertEquals("https://music.youtube.com/watch?v=abcdefghijk",all.get(0).youtubeUrl);
+        assertEquals("https://music.youtube.com/watch?v=otherother1",all.get(1).youtubeUrl);
+        assertEquals("https://music.youtube.com/watch?v=abcdefghijk",all.get(2).youtubeUrl);
+    }
+
     @Test public void exportListsEveryMomentWithNoteAndLink()throws Exception{
         MomentStore store=store();
         Moment m=store.add("k","Song","Artist","https://music.youtube.com/watch?v=abcdefghijk",83_000);

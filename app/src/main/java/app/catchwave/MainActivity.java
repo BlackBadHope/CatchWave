@@ -29,6 +29,9 @@ public final class MainActivity extends Activity {
     private WaveView wave;
     private ProgressBar progress;
     private boolean pendingStart,refinePrompted;
+    RecognitionClient recognition=new RecognitionClient();
+    private final java.util.concurrent.ExecutorService lookup=java.util.concurrent.Executors.newSingleThreadExecutor();
+    private volatile RequestScope lookupScope;
     private LinearLayout playerPanel;
     private TextView playerTitle,playerClock;
     private TextView playerFailure;
@@ -64,7 +67,7 @@ public final class MainActivity extends Activity {
         live.setChecked(getPreferences().getBoolean("live",false));live.setOnCheckedChangeListener((b,checked)->{getPreferences().edit().putBoolean("live",checked).apply();modeNote.setText(checked?L.t("Follow pauses and song changes. Headphones required."):L.t("One catch — then it's on its own"));});mode.addView(live);
         modeNote=text(live.isChecked()?L.t("Follow pauses and song changes. Headphones required."):L.t("One catch — then it's on its own"),13,MUTED);modeNote.setLineSpacing(dp(2),1);mode.addView(modeNote);add(body,mode,16);
         open=button(L.t("Open YouTube Music"),PANEL,TEXT);open.setOnClickListener(v->openTrack());add(body,open,10);
-        reject=button(L.t("This is a different version"),PANEL,MUTED);reject.setOnClickListener(v->startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT)));add(body,reject,8);
+        reject=button(L.t("This is a different version"),PANEL,MUTED);reject.setOnClickListener(v->rejectMatch());add(body,reject,8);
         setup=text("",12,MUTED);setup.setGravity(Gravity.CENTER);setup.setPadding(0,dp(8),0,0);setup.setOnClickListener(v->permissionsInfo());add(body,setup,8);
         CatchWaveUi.divider(body,20);
         Button moments=button(L.t("Music moments"),PANEL,TEXT);moments.setOnClickListener(v->startActivity(new Intent(this,MomentsActivity.class)));add(body,moments,16);
@@ -163,6 +166,41 @@ public final class MainActivity extends Activity {
         if(model.running){if(playing)model.manualHold=true;startService(new Intent(this,SyncService.class).setAction(playing?SyncService.USER_PAUSE:SyncService.USER_RESUME));}
         else if(playing&&MediaBridge.supports(c,PlaybackState.ACTION_PAUSE))c.getTransportControls().pause();
         else if(!playing&&MediaBridge.supports(c,PlaybackState.ACTION_PLAY))c.getTransportControls().play();
+    }
+    /** The wrong automatic pick first offers the remembered playable alternatives; a plain
+     *  rejection stays one tap away and still clears the cache, pin and history entry. */
+    private void rejectMatch(){
+        Track t=model.track;if(t==null)return;
+        java.util.List<RecognitionClient.Candidate> known=recognition.cachedCandidates(t);
+        if(!known.isEmpty()){chooseVersion(t,known);return;}
+        model.update(L.t("Looking for other versions"),L.t("Searching the catalog for alternatives to choose from…"));
+        final RequestScope scope=new RequestScope();lookupScope=scope;
+        lookup.submit(()->{
+            final java.util.List<RecognitionClient.Candidate> fetched=recognition.fetchCandidates(t,scope);
+            runOnUiThread(()->{
+                if(scope.isCancelled()||isFinishing()||model.track==null||!model.track.key.equals(t.key))return;
+                if(fetched.isEmpty())sendReject();else chooseVersion(t,fetched);
+            });
+        });
+    }
+    private void sendReject(){startService(new Intent(this,SyncService.class).setAction(SyncService.REJECT));}
+    private void chooseVersion(Track t,java.util.List<RecognitionClient.Candidate> candidates){
+        String[] labels=new String[candidates.size()];
+        for(int i=0;i<candidates.size();i++)labels[i]=candidates.get(i).title+" — "+candidates.get(i).artist;
+        CatchWaveUi.dialog(this).setTitle(L.t("Which recording did you hear?"))
+            .setItems(labels,(d,which)->applyChoice(t,candidates.get(which)))
+            .setNegativeButton(L.t("None of these"),(d,w)->sendReject())
+            .setNeutralButton(L.t("Cancel"),null).show();
+    }
+    private void applyChoice(Track t,RecognitionClient.Candidate chosen){
+        MatchPins.put(this,t.key,chosen.url,chosen.title,chosen.artist);
+        recognition.pin(t,chosen);
+        MomentStore.get(this).replaceUrl(t.key,chosen.url);
+        if(model.running){
+            model.update(L.t("Recording choice saved"),L.t("Re-catching with the chosen version…"));
+            startService(new Intent(this,SyncService.class).setAction(SyncService.USER_RESUME));
+        }else model.update(L.t("Recording choice saved"),L.t("Press «Catch» near the music to continue the chosen version, or open it in YouTube Music."));
+        render();
     }
     private void calibrateAudio(){
         MediaController c=new MediaBridge(this).controller();
@@ -269,7 +307,11 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){super.onResume();visible=true;LanAudioService.uiVisible=true;LanAudioService.maybeAutoStart(this);if(LanState.INSTANCE.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.REFRESH));if(playerLaunch!=null)playerLaunch.cancel();render();playerHandler.removeCallbacks(playerTick);playerHandler.post(playerTick);}
     @Override protected void onPause(){visible=false;LanAudioService.uiVisible=false;if(LanState.INSTANCE.started)startService(new Intent(this,LanAudioService.class).setAction(LanAudioService.REFRESH));playerHandler.removeCallbacks(playerTick);super.onPause();}
-    @Override protected void onDestroy(){if(playerLaunch!=null)playerLaunch.cancel();model.remove(listener);super.onDestroy();}
+    @Override protected void onDestroy(){
+        if(playerLaunch!=null)playerLaunch.cancel();model.remove(listener);
+        RequestScope scope=lookupScope;if(scope!=null)scope.cancel();lookup.shutdownNow();
+        super.onDestroy();
+    }
     @Override public void dump(String prefix,FileDescriptor fd,PrintWriter writer,String[] args){
         super.dump(prefix,fd,writer,args);writer.println(model.report());writer.println(new MediaBridge(this).diagnosticSnapshot());
     }

@@ -619,5 +619,13 @@ final class L {
         RU.put("Clear the whole history?", "Очистить всю историю?");
         RU.put("Every moment, favorite and note will be deleted from this phone. This cannot be undone.", "Все моменты, избранное и заметки будут удалены с этого телефона. Это нельзя отменить.");
         RU.put("Share moments", "Поделиться моментами");
+        RU.put("Which recording did you hear?", "Какая запись звучала?");
+        RU.put("None of these", "Ни одна из них");
+        RU.put("Looking for other versions", "Ищу другие версии");
+        RU.put("Searching the catalog for alternatives to choose from…", "Ищу в каталоге варианты для выбора…");
+        RU.put("Recording choice saved", "Выбор записи сохранён");
+        RU.put("Re-catching with the chosen version…", "Повторный подхват выбранной версии…");
+        RU.put("Press «Catch» near the music to continue the chosen version, or open it in YouTube Music.", "Нажми «Подхватить» рядом с музыкой, чтобы продолжить выбранную версию, или открой её в YouTube Music.");
+        RU.put("Pinned recording applied", "Применена закреплённая запись");
     }
 }
